@@ -1,6 +1,7 @@
 -- Sogilex Build: per-person daily limits for AI site generation.
 -- Run once in Supabase: SQL Editor > New query > paste > Run. Safe to re-run.
--- To change the limits, edit the numbers in claim_build_slot() and build_quota() and run this again.
+-- To change the default limits, edit the numbers in claim_build_slot() and build_quota() and run this again.
+-- To change one person's limit, use the build_limits table instead.
 
 create table if not exists public.build_generations (
   id uuid primary key default gen_random_uuid(),
@@ -25,6 +26,18 @@ create policy "builds: read own" on public.build_generations
 grant select on public.build_generations to authenticated;
 revoke all on public.build_generations from anon;
 
+-- Per-person overrides: a higher daily build limit, and who may publish while publishing is in closed beta.
+-- Nobody can read or change this through the API; only the functions below use it. Add a row in the dashboard
+-- (Table Editor > build_limits) to raise someone's limit or let them publish.
+create table if not exists public.build_limits (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  per_day integer not null default 3 check (per_day between 0 and 100),
+  can_publish boolean not null default false,
+  note text
+);
+alter table public.build_limits enable row level security;
+revoke all on public.build_limits from anon, authenticated;
+
 -- Reserve one generation for the signed-in person, or refuse. Failed builds don't count toward the
 -- 3 a day. Only the Edge Function (service role) can mark a build failed, so nobody can free up slots
 -- by failing their own builds; failures are still capped at 5 a day and every build counts toward the 50.
@@ -35,13 +48,14 @@ security definer
 set search_path = ''
 as $$
 declare
-  per_person_per_day constant integer := 3;    -- free builds per person per 24 hours (failed builds don't count)
+  per_person_per_day integer := 3;             -- free builds per person per 24 hours, unless build_limits says otherwise (failed builds don't count)
   failed_per_day     constant integer := 5;    -- failed builds per person per 24 hours, so retries can't drain the shared cap
   everyone_per_day   constant integer := 50;   -- safety cap on total spend per 24 hours (~$0.25 each; counts every build)
   me uuid := auth.uid();
   new_id uuid;
 begin
   if me is null then raise exception 'Sign in first.'; end if;
+  select coalesce((select l.per_day from public.build_limits l where l.user_id = me), 3) into per_person_per_day;
   perform pg_advisory_xact_lock(hashtext('sogilex_build_slots'));
   if (select count(*) from public.build_generations
       where user_id = me and status <> 'failed' and created_at > now() - interval '24 hours') >= per_person_per_day then
@@ -87,9 +101,10 @@ stable
 security definer
 set search_path = ''
 as $$
-  select greatest(0, 3 - (select count(*)::integer from public.build_generations
-                          where user_id = auth.uid() and status <> 'failed'
-                            and created_at > now() - interval '24 hours'));
+  select greatest(0,
+    coalesce((select l.per_day from public.build_limits l where l.user_id = auth.uid()), 3)
+    - (select count(*)::integer from public.build_generations
+        where user_id = auth.uid() and status <> 'failed' and created_at > now() - interval '24 hours'));
 $$;
 
 revoke all on function public.claim_build_slot() from public, anon;

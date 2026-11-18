@@ -26,7 +26,7 @@
     try {
       const { data, error } = await db.rpc('build_quota').abortSignal(AbortSignal.timeout(8000));
       if (error) throw error;
-      $('quota').textContent = data > 0 ? `${data} of 3 builds left today` : 'No builds left today';
+      $('quota').textContent = data > 0 ? `${data} ${data === 1 ? 'build' : 'builds'} left today` : 'No builds left today';
       $('quota').classList.toggle('out', data <= 0);
       return data;
     } catch { $('quota').textContent = ''; return null; }
