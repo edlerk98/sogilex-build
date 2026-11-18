@@ -26,7 +26,7 @@ Technical rules:
 - Use no JavaScript at all: the site is previewed with scripts disabled.
 - Load nothing from other domains: no CDNs, web fonts, external images or scripts. Use system font stacks, CSS gradients and shapes, and inline SVG for illustrations and icons.
 - Semantic HTML (header, nav, main, section, footer), responsive from 360px wide upward, WCAG AA colour contrast, visible focus styles, alt text and labels where needed.
-- Keep the whole file under about 24 KB.
+- Keep the whole file under about 30 KB.
 - Forms may appear for layout, but use action="#" and add an HTML comment saying the form needs a form service before it can send anything.
 
 Content rules:
@@ -47,6 +47,10 @@ function cleanHtml(text: string): string {
   const end = out.toLowerCase().lastIndexOf("</html>");
   if (end >= 0) out = out.slice(0, end + 7);
   return out;
+}
+// A real page: an <html> document with a body, of some size. Anything else is treated as a failed build.
+function looksLikePage(html: string): boolean {
+  return html.length >= 1500 && /<html[\s>]/i.test(html) && /<body[\s>]/i.test(html) && /<\/html>\s*$/i.test(html);
 }
 const line = (o: Record<string, unknown>) => enc.encode(JSON.stringify(o) + "\n");
 
@@ -137,9 +141,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const stream = anthropic.beta.messages.stream({
           model: MODEL,
           max_tokens: 24000, // 16k was too tight: one early build used 15,467 (thinking counts toward it).
-          // "low" (not "medium"): builds at medium averaged ~140 s against Supabase's 150 s free-plan limit.
-          // Back to "medium" once on Supabase Pro (400 s).
-          output_config: { effort: "low" },
+          // "medium". "low" was tried to save time and produced a junk one-line answer instead of a page.
+          // Builds at medium take ~140 s, so the real fix for the 150 s limit is Supabase Pro (400 s).
+          output_config: { effort: "medium" },
           // If the model declines for a safety reason, the API retries on a fallback model in the same call.
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
@@ -161,6 +165,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
           controller.enqueue(line({ t: "error", message: "That request couldn't be built. This one didn't count toward your daily builds. Try describing a different site." }));
         } else if (final.stop_reason === "max_tokens") {
           controller.enqueue(line({ t: "error", message: "The site came out too long and was cut off. This one didn't count toward your daily builds. Try a shorter description." }));
+        } else if (!looksLikePage(cleanHtml(full))) {
+          stop = "bad_output";
+          console.error("build produced no page", full.slice(0, 200));
+          controller.enqueue(line({ t: "error", message: "That build came out broken. This one didn't count toward your daily builds. Please try again." }));
         } else {
           ok = true;
           // Keep the finished site so it can be published exactly as generated (see build_outputs).
