@@ -26,7 +26,7 @@ Technical rules:
 - Use no JavaScript at all: the site is previewed with scripts disabled.
 - Load nothing from other domains: no CDNs, web fonts, external images or scripts. Use system font stacks, CSS gradients and shapes, and inline SVG for illustrations and icons.
 - Semantic HTML (header, nav, main, section, footer), responsive from 360px wide upward, WCAG AA colour contrast, visible focus styles, alt text and labels where needed.
-- Keep the whole file under about 30 KB.
+- Keep the whole file under about 24 KB.
 - Forms may appear for layout, but use action="#" and add an HTML comment saying the form needs a form service before it can send anything.
 
 Content rules:
@@ -137,7 +137,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const stream = anthropic.beta.messages.stream({
           model: MODEL,
           max_tokens: 24000, // 16k was too tight: one early build used 15,467 (thinking counts toward it).
-          output_config: { effort: "medium" },
+          // "low" (not "medium"): builds at medium averaged ~140 s against Supabase's 150 s free-plan limit.
+          // Back to "medium" once on Supabase Pro (400 s).
+          output_config: { effort: "low" },
           // If the model declines for a safety reason, the API retries on a fallback model in the same call.
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",

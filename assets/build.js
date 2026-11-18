@@ -183,7 +183,7 @@
     siteName = $('name').value.trim();
     $('addr').textContent = `${slug(siteName)}.html`;
     html = ''; paint(true); setDone(false);
-    builtOk = false; lastBuildId = null; refreshPublish();
+    builtOk = false; lastBuildId = null; $('pub-status').textContent = ''; $('pub-status').className = 'status'; refreshPublish();
     const go = $('go'); go.disabled = true; go.classList.add('working'); go.firstChild.textContent = 'Building… ';
     $('frame').closest('.preview').classList.add('building');
     st.textContent = 'Designing your site. This usually takes one to two minutes.';
