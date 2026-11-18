@@ -13,9 +13,9 @@ const STYLES = ["clean", "bold", "playful", "elegant", "dark", "futuristic"] as 
 const STYLE_NOTES: Record<string, string> = {
   futuristic: "futuristic, done with restraint: a dark ground, thin glowing lines, a fine grid, wide or geometric type and one luminous accent. No robots, circuit boards, holograms or sci-fi clichés",
 };
-// Supabase's free plan stops a function at 150 s. Stop the build ourselves first, so the person gets a clear
-// message and the build is recorded as failed (which doesn't count toward their daily builds).
-const DEADLINE_MS = 140_000;
+// Supabase Pro stops a function at 400 s (150 s on the free plan). Stop the build ourselves first, so the person
+// gets a clear message and the build is recorded as failed (which doesn't count toward their daily builds).
+const DEADLINE_MS = 380_000;
 
 const SYSTEM = `You are Sogilex Build, a senior web designer who writes complete single-file websites.
 
@@ -142,7 +142,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           model: MODEL,
           max_tokens: 24000, // 16k was too tight: one early build used 15,467 (thinking counts toward it).
           // "medium". "low" was tried to save time and produced a junk one-line answer instead of a page.
-          // Builds at medium take ~140 s, so the real fix for the 150 s limit is Supabase Pro (400 s).
+          // Builds at medium take ~140 s, comfortably inside Supabase Pro's 400 s.
           output_config: { effort: "medium" },
           // If the model declines for a safety reason, the API retries on a fallback model in the same call.
           betas: ["server-side-fallback-2026-07-01"],
