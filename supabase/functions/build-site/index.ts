@@ -73,8 +73,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (description.length < 10) return json({ error: "Describe the site in a sentence or two (at least 10 characters)." }, 400, cors);
   if (description.length > 1500) return json({ error: "Keep the description under 1,500 characters." }, 400, cors);
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  // Checked before a build is reserved, so a misconfigured key never costs anyone one of their builds.
+  // Real keys are plain printable ASCII; a copied "…" or an invisible character breaks the request headers.
+  const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") ?? "").trim();
   if (!apiKey) return json({ error: "Sogilex Build isn't set up yet (missing API key)." }, 503, cors);
+  if (!/^[\x21-\x7e]+$/.test(apiKey)) {
+    console.error("ANTHROPIC_API_KEY contains characters a real key can't have (e.g. a copied '…'). Replace the secret with the full key.");
+    return json({ error: "Sogilex Build's AI key is set up incorrectly. The site owner needs to fix it." }, 503, cors);
+  }
 
   // 3. Reserve one of today's builds. Refuses when the person or the whole site is over its limit.
   const { data: buildId, error: slotError } = await supabase.rpc("claim_build_slot");
