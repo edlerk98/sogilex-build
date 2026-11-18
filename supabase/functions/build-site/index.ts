@@ -82,6 +82,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "Sogilex Build's AI key is set up incorrectly. The site owner needs to fix it." }, 503, cors);
   }
 
+  // Only this function may record how a build ended (see finish_build in 003_build.sql), so it uses the
+  // project's secret key for that one call. Supabase provides the key to Edge Functions automatically.
+  let secretKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  try { secretKey = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}").default ?? secretKey; } catch { /* keep fallback */ }
+  const admin = secretKey
+    ? createClient(SUPABASE_URL, secretKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null;
+  if (!admin) console.error("No Supabase secret key in the environment: builds can't be marked finished.");
+
   // 3. Reserve one of today's builds. Refuses when the person or the whole site is over its limit.
   const { data: buildId, error: slotError } = await supabase.rpc("claim_build_slot");
   if (slotError || !buildId) return json({ error: slotError?.message ?? "Couldn't start a build." }, 429, cors);
@@ -139,7 +148,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.error("build-site failed", err);
         controller.enqueue(line({ t: "error", message }));
       } finally {
-        await supabase.rpc("finish_build", { build_id: buildId, ok, in_tokens: inTokens, out_tokens: outTokens, stop });
+        const { error: finishError } = admin
+          ? await admin.rpc("finish_build", { build_id: buildId, ok, in_tokens: inTokens, out_tokens: outTokens, stop })
+          : { error: null };
+        if (finishError) console.error("finish_build failed", finishError);
         controller.close();
       }
     },

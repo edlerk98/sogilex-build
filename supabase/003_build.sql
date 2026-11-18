@@ -1,6 +1,6 @@
 -- Sogilex Build: per-person daily limits for AI site generation.
 -- Run once in Supabase: SQL Editor > New query > paste > Run. Safe to re-run.
--- To change the limits, edit the two numbers in claim_build_slot() and run this again.
+-- To change the limits, edit the numbers in claim_build_slot() and build_quota() and run this again.
 
 create table if not exists public.build_generations (
   id uuid primary key default gen_random_uuid(),
@@ -25,8 +25,9 @@ create policy "builds: read own" on public.build_generations
 grant select on public.build_generations to authenticated;
 revoke all on public.build_generations from anon;
 
--- Reserve one generation for the signed-in person, or refuse. Every reserved slot counts,
--- including failed ones, so nobody can free up slots by marking their own builds failed.
+-- Reserve one generation for the signed-in person, or refuse. Failed builds don't count toward the
+-- 3 a day. Only the Edge Function (service role) can mark a build failed, so nobody can free up slots
+-- by failing their own builds; failures are still capped at 5 a day and every build counts toward the 50.
 create or replace function public.claim_build_slot()
 returns uuid
 language plpgsql
@@ -59,9 +60,8 @@ begin
 end;
 $$;
 
--- Record how a build ended (for your own cost tracking). Only the owner's own row, only once.
--- The old four-argument version is replaced by the one below (stop_reason defaults to null, so an
--- un-redeployed function that still sends four arguments keeps working).
+-- Record how a build ended. Only once per build, and only the Edge Function can call it (service role):
+-- if signed-in people could call it, they could mark their own builds failed to dodge the daily limit.
 drop function if exists public.finish_build(uuid, boolean, integer, integer);
 create or replace function public.finish_build(build_id uuid, ok boolean, in_tokens integer, out_tokens integer,
                                                stop text default null)
@@ -76,7 +76,7 @@ as $$
          output_tokens = out_tokens,
          finished_at = now(),
          stop_reason = left(stop, 40)
-   where id = build_id and user_id = auth.uid() and status = 'started';
+   where id = build_id and status = 'started';
 $$;
 
 -- How many builds the signed-in person has left today.
@@ -93,10 +93,10 @@ as $$
 $$;
 
 revoke all on function public.claim_build_slot() from public, anon;
-revoke all on function public.finish_build(uuid, boolean, integer, integer, text) from public, anon;
+revoke all on function public.finish_build(uuid, boolean, integer, integer, text) from public, anon, authenticated;
 revoke all on function public.build_quota() from public, anon;
 grant execute on function public.claim_build_slot() to authenticated;
-grant execute on function public.finish_build(uuid, boolean, integer, integer, text) to authenticated;
+grant execute on function public.finish_build(uuid, boolean, integer, integer, text) to service_role;
 grant execute on function public.build_quota() to authenticated;
 
 -- Build times and cost, newest first:
