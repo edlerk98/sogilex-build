@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sogilex Menus · type it in, print it out</title>
+<meta name="description" content="Type your dishes and prices once and get a clean, print-ready restaurant menu. Prices print exactly as you typed them.">
+<meta name="theme-color" content="#120A18">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/unbounded-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/build.css">
+<link rel="stylesheet" href="../assets/menus.css">
+<style id="page-size">@page { size: letter; margin: 0; }</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="sunset" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D91E8C"/><stop offset="0.55" stop-color="#F2496B"/><stop offset="1" stop-color="#FF9A4D"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 124 102"><rect x="0" y="50" width="64" height="52" rx="11" fill="url(#sunset)"/><rect x="60" y="0" width="64" height="52" rx="11" fill="url(#sunset)"/></symbol>
+  </defs>
+</svg>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<header class="top">
+  <div class="wrap row">
+    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home"><svg width="32" height="26" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">SOGILEX</span><span class="product">Menus</span></a>
+    <nav aria-label="Main">
+      <a href="../">Websites</a>
+      <a href="./" aria-current="page">Menus</a>
+      <button class="navbtn" type="button" id="pwbtn" hidden aria-haspopup="dialog">Password</button>
+      <button class="navbtn" type="button" id="signout" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-h">
+    <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>Sogilex Menus · beta</p>
+    <h1 id="hero-h">Type it in.<br><span class="lime">Print it out.</span></h1>
+    <p class="lede" data-horizon>Add your dishes and prices, and Sogilex sets them as a clean menu that fits the page. Prices print exactly as you type them. Change anything, any time.</p>
+  </section>
+
+  <section class="wrap studio menu-studio" aria-label="Make a menu">
+    <div class="panel brief">
+      <div id="signin" class="stack" hidden>
+        <h2 class="panel-h">Sign in to make a menu</h2>
+        <p class="muted">Same Sogilex account as Build and Savepoint Atlas.</p>
+        <div id="signin-mount"></div>
+      </div>
+      <div id="editor" class="stack" hidden>
+        <div class="panel-row">
+          <h2 class="panel-h">Your menu</h2>
+          <span class="quota" id="save-state" aria-live="polite"></span>
+        </div>
+        <div id="fields"></div>
+      </div>
+    </div>
+
+    <div class="panel preview menu-preview" aria-label="Preview of your printed menu">
+      <div class="chrome">
+        <label class="paper-pick">Paper
+          <select id="paper">
+            <option value="letter">US Letter</option>
+            <option value="a4">A4</option>
+          </select>
+        </label>
+        <span class="fit" id="fit" aria-live="polite"></span>
+        <button class="btn" type="button" id="print">Print or save PDF</button>
+      </div>
+      <div class="sheet-wrap" id="sheet-wrap"><div class="menu-page" id="sheet"></div></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="pwdialog" class="pwdialog" aria-labelledby="pw-h">
+  <div class="stack">
+    <h2 class="panel-h" id="pw-h">Your password</h2>
+    <div id="pw-mount"></div>
+    <form method="dialog"><button class="btn btn-secondary" type="submit">Close</button></form>
+  </div>
+</dialog>
+
+<footer class="foot">
+  <div class="wrap row">
+    <span>© 2026 <a href="https://sogilex.com/">Sogilex</a></span>
+    <span>Questions: <a href="mailto:hello@sogilex.com">hello@sogilex.com</a></span>
+  </div>
+</footer>
+
+<div id="print-root" aria-hidden="true"></div>
+
+<script src="../assets/vendor/supabase.js"></script>
+<script src="../assets/sogilex-auth.js"></script>
+<script src="../assets/menus.js" defer></script>
+<script src="../assets/scene.js" defer></script>
+</body>
+</html>

@@ -11,3 +11,8 @@ Setup (once): run the SQL; deploy the function as `build-site` with JWT verifica
 Cost: roughly $0.20-0.30 per generated site at Opus 5.5 rates. Set a monthly spend limit in the Anthropic Console.
 
 Generated sites run in a sandboxed iframe with scripts disabled. Descriptions are sent to Anthropic and not stored by Sogilex; only build timestamps and token counts are kept.
+
+## Sogilex Menus (`/menus/`)
+Milestone 1 of `docs/MENU-SPEC.md`: a form for the menu, a live print preview that fits itself to one page
+(shrinking type to ~80% and switching to two columns if needed), autosave to the `menus` table
+(`supabase/005_menus.sql`), and print / save as PDF. No AI yet. Fonts: EB Garamond (SIL OFL).
