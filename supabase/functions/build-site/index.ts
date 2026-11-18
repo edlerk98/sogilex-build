@@ -101,10 +101,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let ok = false;
       let inTokens: number | null = null;
       let outTokens: number | null = null;
+      let stop: string | null = null;
       try {
         const stream = anthropic.beta.messages.stream({
           model: MODEL,
-          max_tokens: 16000,
+          max_tokens: 24000, // 16k was too tight: one early build used 15,467 (thinking counts toward it).
           output_config: { effort: "medium" },
           // If the model declines for a safety reason, the API retries on a fallback model in the same call.
           betas: ["server-side-fallback-2026-07-01"],
@@ -120,10 +121,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const final = await stream.finalMessage();
         inTokens = final.usage.input_tokens;
         outTokens = final.usage.output_tokens;
+        stop = final.stop_reason;
         if (final.stop_reason === "refusal") {
-          controller.enqueue(line({ t: "error", message: "That request couldn't be built. Try describing a different site." }));
+          controller.enqueue(line({ t: "error", message: "That request couldn't be built. This one didn't count toward your daily builds. Try describing a different site." }));
         } else if (final.stop_reason === "max_tokens") {
-          controller.enqueue(line({ t: "error", message: "The site came out too long and was cut off. Try a simpler description." }));
+          controller.enqueue(line({ t: "error", message: "The site came out too long and was cut off. This one didn't count toward your daily builds. Try a shorter description." }));
         } else {
           ok = true;
           controller.enqueue(line({ t: "done" }));
@@ -133,10 +135,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         if (err instanceof Anthropic.RateLimitError) message = "The AI service is busy. Please try again in a minute.";
         else if (err instanceof Anthropic.AuthenticationError) message = "Sogilex Build's AI key isn't working. The site owner needs to fix it.";
         else if (err instanceof Anthropic.APIError && (err.status ?? 0) >= 500) message = "The AI service had a problem. Please try again.";
+        stop = "error";
         console.error("build-site failed", err);
         controller.enqueue(line({ t: "error", message }));
       } finally {
-        await supabase.rpc("finish_build", { build_id: buildId, ok, in_tokens: inTokens, out_tokens: outTokens });
+        await supabase.rpc("finish_build", { build_id: buildId, ok, in_tokens: inTokens, out_tokens: outTokens, stop });
         controller.close();
       }
     },
