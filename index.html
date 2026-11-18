@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sogilex Build · describe it, get the website</title>
+<meta name="description" content="Describe a website in a sentence or two and Sogilex Build writes it for you as a single file you can download and host anywhere.">
+<meta name="theme-color" content="#0c0d10">
+<link rel="stylesheet" href="assets/build.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap row">
+    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home">Sogilex<span class="dot" aria-hidden="true"></span> <span class="product">Build</span></a>
+    <nav aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#limits">Privacy &amp; limits</a>
+      <button class="navbtn" type="button" id="signout" hidden>Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-h">
+    <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>Sogilex Build · beta</p>
+    <h1 id="hero-h">Describe it.<br><span class="lime">Get the website.</span></h1>
+    <p class="lede">Write a sentence or two about the site you want. Sogilex Build designs it and writes it as one file you can download and host anywhere.</p>
+  </section>
+
+  <section class="wrap studio" aria-label="Build a website">
+    <!-- left: the brief -->
+    <div class="panel brief">
+      <div id="off" class="stack" hidden>
+        <h2 class="panel-h">Not available yet</h2>
+        <p class="muted">Sogilex Build is being set up. Check back soon.</p>
+      </div>
+
+      <form id="signin" class="stack" hidden novalidate>
+        <h2 class="panel-h">Sign in to build</h2>
+        <p class="muted">No password: we email you a link. It's the same Sogilex account you use for Savepoint Atlas.</p>
+        <div class="field">
+          <label for="email">Email</label>
+          <input class="input" id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+        </div>
+        <button class="btn" type="submit" id="send">Email me a sign-in link</button>
+        <p class="status" id="signin-status" role="status" aria-live="polite"></p>
+      </form>
+
+      <form id="brief" class="stack" hidden novalidate>
+        <div class="panel-row">
+          <h2 class="panel-h">Your brief</h2>
+          <span class="quota" id="quota" aria-live="polite"></span>
+        </div>
+        <div class="field">
+          <label for="desc">Describe the site</label>
+          <textarea class="input" id="desc" maxlength="1500" rows="6" required placeholder="A one-page site for a mobile dog-walking service in a small town. Friendly, outdoorsy, with a services section and a way to get in touch."></textarea>
+          <span class="hint"><span id="desc-count">0</span> / 1,500</span>
+        </div>
+        <div class="field">
+          <label for="name">Name <span class="opt">(optional)</span></label>
+          <input class="input" id="name" type="text" maxlength="80" placeholder="Paws Around Town">
+        </div>
+        <fieldset class="field">
+          <legend>Style</legend>
+          <div class="chips" id="styles">
+            <label><input type="radio" name="style" value="clean" checked><span>Clean</span></label>
+            <label><input type="radio" name="style" value="bold"><span>Bold</span></label>
+            <label><input type="radio" name="style" value="playful"><span>Playful</span></label>
+            <label><input type="radio" name="style" value="elegant"><span>Elegant</span></label>
+            <label><input type="radio" name="style" value="dark"><span>Dark</span></label>
+          </div>
+        </fieldset>
+        <div class="field">
+          <label for="accent">Accent colour</label>
+          <div class="accent-row">
+            <input id="accent" type="color" value="#c8f169">
+            <div class="swatches" role="group" aria-label="Accent presets">
+              <button type="button" data-c="#c8f169" style="--c:#c8f169" aria-label="Lime"></button>
+              <button type="button" data-c="#ff5d73" style="--c:#ff5d73" aria-label="Coral"></button>
+              <button type="button" data-c="#4f7cff" style="--c:#4f7cff" aria-label="Blue"></button>
+              <button type="button" data-c="#f2b84b" style="--c:#f2b84b" aria-label="Amber"></button>
+              <button type="button" data-c="#9b6bff" style="--c:#9b6bff" aria-label="Violet"></button>
+            </div>
+            <label class="check-inline"><input type="checkbox" id="accent-auto"> Let Build choose</label>
+          </div>
+        </div>
+        <button class="btn big" type="submit" id="go">Build my site <span aria-hidden="true">→</span></button>
+        <p class="status" id="build-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <!-- right: the preview -->
+    <div class="panel preview" aria-label="Preview">
+      <div class="chrome">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="addr" id="addr">your-site.html</span>
+        <span class="size" id="size" aria-live="off"></span>
+      </div>
+      <div class="frame-wrap">
+        <iframe id="frame" title="Preview of your generated website" sandbox=""></iframe>
+        <div class="empty" id="empty">
+          <div class="empty-grid" aria-hidden="true"></div>
+          <p>Your site appears here as it's written.</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" type="button" id="download" disabled>Download .html</button>
+        <button class="ghost" type="button" id="copy" disabled>Copy code</button>
+        <button class="ghost" type="button" id="newtab" disabled>Open full size</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="wrap block" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <ol class="steps">
+      <li><span class="n">01</span><h3>Describe</h3><p>A sentence or two about what the site is for, plus a style and a colour.</p></li>
+      <li><span class="n">02</span><h3>Watch it build</h3><p>Claude, Anthropic's AI, designs the page and writes it while you watch the preview fill in.</p></li>
+      <li><span class="n">03</span><h3>Download</h3><p>One self-contained HTML file. Host it anywhere: GitHub Pages, Netlify, your own server.</p></li>
+    </ol>
+  </section>
+
+  <section id="limits" class="wrap block" aria-labelledby="limits-h">
+    <h2 id="limits-h">Privacy &amp; limits</h2>
+    <ul class="notes">
+      <li><b>Three free builds a day</b> per person while Sogilex Build is in beta.</li>
+      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description or the generated site; we only record when a build happened and how long it was, to manage costs.</li>
+      <li><b>Facts stay yours to fill in.</b> Build never invents prices, phone numbers, addresses or reviews. It leaves placeholders like <code>[PHONE NUMBER]</code> for you to replace.</li>
+      <li><b>No logins or look-alikes.</b> Build won't make pages that imitate real companies or collect passwords or card details.</li>
+      <li><b>The site is yours.</b> Use, edit and publish what you download however you like.</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap row">
+    <span>© 2026 <a href="https://sogilex.com/">Sogilex</a></span>
+    <span>Questions: <a href="mailto:hello@sogilex.com">hello@sogilex.com</a></span>
+  </div>
+</footer>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/build.js" defer></script>
+</body>
+</html>
