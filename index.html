@@ -5,16 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sogilex Build · describe it, get the website</title>
 <meta name="description" content="Describe a website in a sentence or two and Sogilex Build writes it for you as a single file you can download and host anywhere.">
-<meta name="theme-color" content="#0c0d10">
+<meta name="theme-color" content="#120A18">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/unbounded-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/build.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="grain" aria-hidden="true"></div>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="sunset" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D91E8C"/><stop offset="0.55" stop-color="#F2496B"/><stop offset="1" stop-color="#FF9A4D"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 124 102"><rect x="0" y="50" width="64" height="52" rx="11" fill="url(#sunset)"/><rect x="60" y="0" width="64" height="52" rx="11" fill="url(#sunset)"/></symbol>
+  </defs>
+</svg>
+<canvas id="scene" aria-hidden="true"></canvas>
 
 <header class="top">
   <div class="wrap row">
-    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home">Sogilex<span class="dot" aria-hidden="true"></span> <span class="product">Build</span></a>
+    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home"><svg width="32" height="26" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">SOGILEX</span><span class="product">Build</span></a>
     <nav aria-label="Main">
       <a href="#how">How it works</a>
       <a href="#limits">Privacy &amp; limits</a>
@@ -28,7 +36,7 @@
   <section class="hero wrap" aria-labelledby="hero-h">
     <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>Sogilex Build · beta</p>
     <h1 id="hero-h">Describe it.<br><span class="lime">Get the website.</span></h1>
-    <p class="lede">Write a sentence or two about the site you want. Sogilex Build designs it and writes it as one file you can download and host anywhere.</p>
+    <p class="lede" data-horizon>Write a sentence or two about the site you want. Sogilex Build designs it and writes it as one file you can download and host anywhere.</p>
   </section>
 
   <section class="wrap studio" aria-label="Build a website">
@@ -67,6 +75,7 @@
             <label><input type="radio" name="style" value="playful"><span>Playful</span></label>
             <label><input type="radio" name="style" value="elegant"><span>Elegant</span></label>
             <label><input type="radio" name="style" value="dark"><span>Dark</span></label>
+            <label><input type="radio" name="style" value="futuristic"><span>Futuristic</span></label>
           </div>
         </fieldset>
         <div class="field">
@@ -149,5 +158,6 @@
 <script src="assets/vendor/supabase.js"></script>
 <script src="assets/sogilex-auth.js"></script>
 <script src="assets/build.js" defer></script>
+<script src="assets/scene.js" defer></script>
 </body>
 </html>

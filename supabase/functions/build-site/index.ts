@@ -8,7 +8,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "https://sdltqbctuieyjlujsd
 const PUBLISHABLE_KEY = "sb_publishable_SLyXLfw7hZQTL_xEpofo8g_XgKZZStM";
 const ALLOWED_ORIGINS = ["https://build.sogilex.com"];
 const MODEL = "claude-opus-5-5";
-const STYLES = ["clean", "bold", "playful", "elegant", "dark"] as const;
+const STYLES = ["clean", "bold", "playful", "elegant", "dark", "futuristic"] as const;
+// Extra direction for styles whose name alone invites clichés.
+const STYLE_NOTES: Record<string, string> = {
+  futuristic: "futuristic, done with restraint: a dark ground, thin glowing lines, a fine grid, wide or geometric type and one luminous accent. No robots, circuit boards, holograms or sci-fi clichés",
+};
 // Supabase's free plan stops a function at 150 s. Stop the build ourselves first, so the person gets a clear
 // message and the build is recorded as failed (which doesn't count toward their daily builds).
 const DEADLINE_MS = 140_000;
@@ -102,7 +106,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const request = [
     `<request>${description}</request>`,
     name ? `Site or business name: ${name}` : "No name given: use a short placeholder like [SITE NAME].",
-    `Visual style: ${style}.`,
+    `Visual style: ${STYLE_NOTES[style] ?? style}.`,
     accent ? `Accent colour: ${accent}.` : "Accent colour: your choice, to suit the style.",
   ].join("\n");
 
