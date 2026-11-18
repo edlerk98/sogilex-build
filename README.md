@@ -15,4 +15,5 @@ Generated sites run in a sandboxed iframe with scripts disabled. Descriptions ar
 ## Sogilex Menus (`/menus/`)
 Milestone 1 of `docs/MENU-SPEC.md`: a form for the menu, a live print preview that fits itself to one page
 (shrinking type to ~80% and switching to two columns if needed), autosave to the `menus` table
-(`supabase/005_menus.sql`), and print / save as PDF. No AI yet. Fonts: EB Garamond (SIL OFL).
+(`supabase/005_menus.sql`), and print / save as PDF. No AI yet. Looks: 5 font pairings × 10 palettes (+ "From my logo") × 3 layouts × 3 borders,
+every palette checked for WCAG AA contrast. Fonts (SIL OFL): EB Garamond, Playfair Display, Bebas Neue, Fraunces, Inter.

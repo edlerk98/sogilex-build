@@ -14,9 +14,37 @@
   const blankItem = () => ({ name: '', desc: '', prices: [{ label: '', amount: '' }], tags: [] });
   const blankSection = () => ({ name: '', note: '', items: [blankItem()] });
   const blankMenu = () => ({
-    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', showLogo: true, logoColor: false,
+    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', showLogo: true,
+    font: 'classic', palette: 'cream', layout: 'centered', border: 'none',
     sections: [blankSection()], footer: { address: '', phone: '', hours: '', website: '' },
   });
+
+  // Curated looks: every combination is designed to work, and every palette passes WCAG AA (checked).
+  const FONTS = [
+    ['classic', 'Classic', "'EB Garamond', Georgia, serif"],
+    ['elegant', 'Elegant', "'Playfair Display', Georgia, serif"],
+    ['modern', 'Modern', "Inter, system-ui, sans-serif"],
+    ['bold', 'Bold', "'Bebas Neue', Impact, sans-serif"],
+    ['warm', 'Warm', "Fraunces, Georgia, serif"],
+  ];
+  const PALETTES = [ // [id, name, paper, ink, muted, accent]
+    ['cream', 'Cream', '#FBF8F2', '#221C18', '#6B5D52', '#8E3B24'],
+    ['paper', 'Black & white', '#FFFFFF', '#141414', '#5A5A5A', '#141414'],
+    ['sage', 'Sage', '#F2F4EE', '#1E2A22', '#56645A', '#3D6B48'],
+    ['harbor', 'Harbor', '#F4F3EF', '#18213A', '#5A6175', '#27467F'],
+    ['terracotta', 'Terracotta', '#FBF2EA', '#2B1A14', '#735A4E', '#A84A28'],
+    ['blush', 'Blush', '#FCF3F2', '#2A1D21', '#72595F', '#A8345A'],
+    ['butter', 'Butter', '#FBF5DF', '#2A2414', '#6B5F3E', '#8A5A00'],
+    ['midnight', 'Midnight', '#141922', '#F2EEE6', '#ADA69A', '#E0AE4C'],
+    ['forest', 'Forest', '#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'],
+    ['charcoal', 'Charcoal', '#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
+  ];
+  const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines']];
+  const BORDERS = [['none', 'No border'], ['thin', 'Thin frame'], ['double', 'Double frame']];
+  function paletteOf(id) {
+    if (id === 'logo' && kit.colors && kit.colors[0]) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(kit.colors[0])];
+    return PALETTES.find((p) => p[0] === id) || PALETTES[0];
+  }
 
   let menu = blankMenu();
   let uid = null;
@@ -60,7 +88,27 @@
       h('h3', { text: 'Logo' }),
       logoBox,
       kit.logo ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showLogo, onchange: (e) => { menu.showLogo = e.target.checked; changed(); } }), 'Show my logo at the top of the menu') : null,
-      kit.colors && kit.colors.length ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.logoColor, onchange: (e) => { menu.logoColor = e.target.checked; changed(); } }), 'Use my logo\'s colour for section headings') : null));
+      null));
+
+    // ---------- the look ----------
+    const choice = (key, value, label, extra) => h('button', {
+      type: 'button', class: 'choice' + (extra && extra.cls ? ' ' + extra.cls : ''), 'aria-pressed': String(menu[key] === value),
+      style: extra && extra.style, title: extra && extra.title, onclick: () => { menu[key] = value; changed(true); },
+    }, label);
+    const palettes = [...PALETTES];
+    if (kit.colors && kit.colors[0]) palettes.unshift(paletteOf('logo'));
+    wrap.append(h('div', { class: 'mgroup' },
+      h('h3', { text: 'Look' }),
+      h('p', { class: 'mhint', text: 'Every combination is designed to look good and stay easy to read.' }),
+      h('div', { class: 'choice-label', text: 'Fonts' }),
+      h('div', { class: 'choices' }, FONTS.map(([id, label, family]) => choice('font', id, label, { cls: 'font-choice', style: `font-family:${family}` }))),
+      h('div', { class: 'choice-label', text: 'Colours' }),
+      h('div', { class: 'choices' }, palettes.map(([id, label, bg, , , accent]) => choice('palette', id, h('span', { class: 'pal' },
+        h('i', { style: `background:${bg}` }), h('i', { style: `background:${accent}` })), { cls: 'pal-choice', title: label }))),
+      h('div', { class: 'choice-label', text: 'Layout' }),
+      h('div', { class: 'choices' }, LAYOUTS.map(([id, label]) => choice('layout', id, label))),
+      h('div', { class: 'choice-label', text: 'Border' }),
+      h('div', { class: 'choices' }, BORDERS.map(([id, label]) => choice('border', id, label)))));
     if (uid && window.SogilexBrand) SogilexBrand.mountLogo(logoBox, { db, uid, kit, onChange: (k) => { kit = k; renderEditor(); renderPreview(); } });
 
     menu.sections.forEach((sec, si) => {
@@ -128,8 +176,10 @@
   }
   function renderMenu(target) {
     target.replaceChildren();
-    target.className = 'menu-page' + (menu.paper === 'a4' ? ' a4' : '');
-    target.style.setProperty('--m-accent', menu.logoColor && kit.colors && kit.colors[0] ? SogilexBrand.readableOnLight(kit.colors[0]) : '#8E3B24');
+    target.className = ['menu-page', menu.paper === 'a4' ? 'a4' : '', 'font-' + menu.font, 'layout-' + menu.layout, 'border-' + menu.border].filter(Boolean).join(' ');
+    const [, , bg, ink, muted, accent] = paletteOf(menu.palette);
+    target.style.setProperty('--m-bg', bg); target.style.setProperty('--m-ink', ink);
+    target.style.setProperty('--m-muted', muted); target.style.setProperty('--m-accent', accent);
     const head = h('header', { class: 'm-head' },
       kit.logo && menu.showLogo ? h('img', { class: 'm-logo', src: kit.logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
       h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
@@ -154,6 +204,7 @@
         });
         box.append(h('div', { class: 'm-item' },
           h('span', { class: 'm-iname' }, it.name.trim(), it.tags.length ? h('span', { class: 'm-itags', text: it.tags.join(' · ') }) : null),
+          h('span', { class: 'm-dots', 'aria-hidden': 'true' }),
           priceEl,
           it.desc.trim() ? h('span', { class: 'm-desc', text: it.desc.trim() }) : null));
       }
@@ -239,6 +290,8 @@
   });
   window.addEventListener('resize', scalePreview);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderPreview);
+  // A newly chosen font loads after the first layout: fit again once it arrives.
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => renderPreview());
 
   $('signout').addEventListener('click', async () => { try { await within(db.auth.signOut(), 8000); } catch { /* cleared locally */ } location.reload(); });
   $('pwbtn').addEventListener('click', () => { SogilexAuth.mountPasswordForm($('pw-mount'), { client: db }); $('pwdialog').showModal(); });
@@ -258,6 +311,7 @@
       const { data, error } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
       if (data && data.data && Array.isArray(data.data.sections)) menu = { ...blankMenu(), ...data.data, footer: { ...blankMenu().footer, ...(data.data.footer || {}) } };
+      if (menu.logoColor && menu.palette === 'cream') menu.palette = 'logo';
       $('save-state').textContent = data ? 'Saved' : '';
     } catch { $('save-state').textContent = "Couldn't load your menu. Refresh to try again."; }
     $('editor').hidden = false;
