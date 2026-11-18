@@ -10,6 +10,8 @@ create table if not exists public.build_outputs (
 create index if not exists build_outputs_user on public.build_outputs (user_id, created_at desc);
 alter table public.build_outputs enable row level security;
 revoke all on public.build_outputs from anon, authenticated;
+-- build-site saves with the service role; new tables in this project don't grant it by default.
+grant select, insert, delete on public.build_outputs to service_role;
 
 create table if not exists public.sites (
   user_id uuid primary key references auth.users (id) on delete cascade,
