@@ -6,8 +6,11 @@
   const $ = (id) => document.getElementById(id);
 
   if (!window.supabase) { $('off').hidden = false; return; }
+  // One session across all of sogilex.com (see sogilex-auth.js).
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
+    auth: window.SogilexAuth
+      ? window.SogilexAuth.clientOptions()
+      : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
   // Auth calls have no abort option, so give them an overall time limit.
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
@@ -31,33 +34,27 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; showQuota(); }
-    else $('signin').hidden = false;
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); }
+    else {
+      $('signin').hidden = false;
+      SogilexAuth.mountSignIn($('signin-mount'), {
+        client: db,
+        redirectTo: new URL('./', location.href).href,
+        onSignedIn: () => location.reload(),
+      });
+    }
   })();
+
+  $('pwbtn').addEventListener('click', () => {
+    SogilexAuth.mountPasswordForm($('pw-mount'), { client: db });
+    $('pwdialog').showModal();
+  });
 
   $('signout').addEventListener('click', async () => {
     try { await within(db.auth.signOut(), 8000); } catch { /* local session is cleared regardless */ }
     location.reload();
   });
 
-  $('signin').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = $('email'); const st = $('signin-status');
-    st.className = 'status';
-    if (!email.value || !email.checkValidity()) { st.textContent = 'Enter a valid email address.'; st.classList.add('err'); email.focus(); return; }
-    $('send').disabled = true; st.textContent = 'Sending…';
-    try {
-      const { error } = await within(db.auth.signInWithOtp({
-        email: email.value.trim(),
-        options: { emailRedirectTo: new URL('./', location.href).href, shouldCreateUser: true },
-      }), 15000);
-      if (error) throw error;
-      st.textContent = `Check ${email.value.trim()} for your sign-in link.`; st.classList.add('ok');
-    } catch (err) {
-      st.textContent = /rate|seconds|too many/i.test(String(err?.message)) ? 'Too many links requested. Wait a minute and try again.' : `Couldn't send the link: ${err?.message || err}`;
-      st.classList.add('err'); $('send').disabled = false;
-    }
-  });
 
   // ---------- the brief ----------
   $('desc').addEventListener('input', () => { $('desc-count').textContent = $('desc').value.length.toLocaleString(); });

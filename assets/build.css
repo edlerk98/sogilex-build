@@ -146,3 +146,10 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* password dialog */
+.pwdialog { max-width: min(440px, calc(100vw - 32px)); width: 100%; padding: 24px; border-radius: 16px; background: var(--panel); color: var(--text); border: 1px solid var(--ctl); }
+.pwdialog::backdrop { background: rgba(0, 0, 0, .6); }
+.pwdialog form[method="dialog"] { margin: 0; }
+.btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--ctl); }
+.btn-secondary:hover:not(:disabled) { box-shadow: none; border-color: var(--text); }

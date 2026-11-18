@@ -18,6 +18,7 @@
     <nav aria-label="Main">
       <a href="#how">How it works</a>
       <a href="#limits">Privacy &amp; limits</a>
+      <button class="navbtn" type="button" id="pwbtn" hidden aria-haspopup="dialog">Password</button>
       <button class="navbtn" type="button" id="signout" hidden>Sign out</button>
     </nav>
   </div>
@@ -38,16 +39,11 @@
         <p class="muted">Sogilex Build is being set up. Check back soon.</p>
       </div>
 
-      <form id="signin" class="stack" hidden novalidate>
+      <div id="signin" class="stack" hidden>
         <h2 class="panel-h">Sign in to build</h2>
-        <p class="muted">No password: we email you a link. It's the same Sogilex account you use for Savepoint Atlas.</p>
-        <div class="field">
-          <label for="email">Email</label>
-          <input class="input" id="email" type="email" autocomplete="email" required placeholder="you@example.com">
-        </div>
-        <button class="btn" type="submit" id="send">Email me a sign-in link</button>
-        <p class="status" id="signin-status" role="status" aria-live="polite"></p>
-      </form>
+        <p class="muted">Use your password, or get a code by email. It's the same Sogilex account you use for Savepoint Atlas.</p>
+        <div id="signin-mount"></div>
+      </div>
 
       <form id="brief" class="stack" hidden novalidate>
         <div class="panel-row">
@@ -135,6 +131,14 @@
   </section>
 </main>
 
+<dialog id="pwdialog" class="pwdialog" aria-labelledby="pw-h">
+  <div class="stack">
+    <h2 class="panel-h" id="pw-h">Your password</h2>
+    <div id="pw-mount"></div>
+    <form method="dialog"><button class="btn btn-secondary" type="submit">Close</button></form>
+  </div>
+</dialog>
+
 <footer class="foot">
   <div class="wrap row">
     <span>© 2026 <a href="https://sogilex.com/">Sogilex</a></span>
@@ -143,6 +147,7 @@
 </footer>
 
 <script src="assets/vendor/supabase.js"></script>
+<script src="assets/sogilex-auth.js"></script>
 <script src="assets/build.js" defer></script>
 </body>
 </html>
