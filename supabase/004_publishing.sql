@@ -74,7 +74,8 @@ begin
   select x.slug into old from public.sites x where x.user_id = me;
   insert into public.sites (user_id, slug, build_id, published_at) values (me, s, p_build_id, now())
   on conflict (user_id) do update set slug = excluded.slug, build_id = excluded.build_id, published_at = now();
-  return json_build_object('slug', s, 'html', out_html, 'old_slug', case when old is distinct from s then old end);
+  return json_build_object('slug', s, 'html', out_html, 'old_slug', case when old is distinct from s then old end,
+    'logo', (select k.logo from public.brand_kits k where k.user_id = me)); -- needs 006_brand_kits.sql
 end;
 $$;
 

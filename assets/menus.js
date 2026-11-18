@@ -14,12 +14,13 @@
   const blankItem = () => ({ name: '', desc: '', prices: [{ label: '', amount: '' }], tags: [] });
   const blankSection = () => ({ name: '', note: '', items: [blankItem()] });
   const blankMenu = () => ({
-    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter',
+    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', showLogo: true, logoColor: false,
     sections: [blankSection()], footer: { address: '', phone: '', hours: '', website: '' },
   });
 
   let menu = blankMenu();
   let uid = null;
+  let kit = { logo: null, logo_name: null, colors: [] };
 
   // ---------- small DOM helper ----------
   function h(tag, attrs, ...kids) {
@@ -53,6 +54,14 @@
       h('div', { class: 'field' }, h('label', { for: 'm-name', text: 'Name' }), field(menu, 'name', { id: 'm-name', maxlength: '60', placeholder: 'Ninth & Pine' })),
       h('div', { class: 'field' }, h('label', { for: 'm-tag', text: 'Line under the name (optional)' }), field(menu, 'tagline', { id: 'm-tag', maxlength: '80', placeholder: 'Neighbourhood kitchen' })),
       h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showTagline, onchange: (e) => { menu.showTagline = e.target.checked; changed(); } }), 'Show this line on the menu')));
+
+    const logoBox = h('div');
+    wrap.append(h('div', { class: 'mgroup' },
+      h('h3', { text: 'Logo' }),
+      logoBox,
+      kit.logo ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showLogo, onchange: (e) => { menu.showLogo = e.target.checked; changed(); } }), 'Show my logo at the top of the menu') : null,
+      kit.colors && kit.colors.length ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.logoColor, onchange: (e) => { menu.logoColor = e.target.checked; changed(); } }), 'Use my logo\'s colour for section headings') : null));
+    if (uid && window.SogilexBrand) SogilexBrand.mountLogo(logoBox, { db, uid, kit, onChange: (k) => { kit = k; renderEditor(); renderPreview(); } });
 
     menu.sections.forEach((sec, si) => {
       const items = h('div', { class: 'mitems' });
@@ -120,7 +129,9 @@
   function renderMenu(target) {
     target.replaceChildren();
     target.className = 'menu-page' + (menu.paper === 'a4' ? ' a4' : '');
+    target.style.setProperty('--m-accent', menu.logoColor && kit.colors && kit.colors[0] ? SogilexBrand.readableOnLight(kit.colors[0]) : '#8E3B24');
     const head = h('header', { class: 'm-head' },
+      kit.logo && menu.showLogo ? h('img', { class: 'm-logo', src: kit.logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
       h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
       menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
       h('div', { class: 'm-rule' }));
@@ -241,6 +252,7 @@
       return;
     }
     uid = s.user.id;
+    if (window.SogilexBrand) kit = await SogilexBrand.load(db, uid);
     $('signout').hidden = false; $('pwbtn').hidden = false;
     try {
       const { data, error } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));

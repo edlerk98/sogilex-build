@@ -83,7 +83,7 @@ async function api(req, env, url) {
       let body;
       try { body = await req.json(); } catch { return json({ error: 'Send JSON.' }, 400); }
       const result = await rpc(env, 'publish_site', { p_build_id: String(body.build_id || ''), p_slug: String(body.slug || '') }, token);
-      const html = await prepare(result.html, result.slug);
+      const html = await prepare(result.html, result.slug, result.logo);
       await env.SITES.put('site:' + result.slug, html);
       if (result.old_slug) await env.SITES.delete('site:' + result.old_slug);
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
@@ -106,11 +106,17 @@ async function api(req, env, url) {
 const ACTIVE = 'script, iframe, frame, frameset, object, embed, applet, base, portal, meta[http-equiv], link';
 const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'srcset', 'poster', 'data']);
 
-async function prepare(html, slug) {
+async function prepare(html, slug, logo) {
   const footer = `<div style="all:initial;display:block;padding:14px 16px;text-align:center;font:13px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;background:#120A18;color:#BBA9C2">Made with <a href="https://sogilex.com/" style="color:#FF9A4D">Sogilex</a> · <a href="mailto:hello@sogilex.com?subject=${encodeURIComponent('Report: ' + slug + '.' + ROOT)}" style="color:#BBA9C2">Report this site</a></div>`;
   const trap = '<div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>';
   const rewriter = new HTMLRewriter()
     .on(ACTIVE, { element(el) { el.remove(); } })
+    // The owner's logo: Build writes src="sogilex:logo"; the real image (a PNG data URL) goes in here.
+    .on('img', { element(el) {
+      if (el.getAttribute('src') !== 'sogilex:logo') return;
+      if (typeof logo === 'string' && logo.startsWith('data:image/png;base64,')) el.setAttribute('src', logo);
+      else el.remove();
+    } })
     .on('*', {
       element(el) {
         const drop = [];

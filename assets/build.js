@@ -16,6 +16,10 @@
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
 
   let html = '';
+  let kit = { logo: null, logo_name: null, colors: [] }; // brand kit: logo + its colours
+  const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  // Generated sites refer to the logo as src="sogilex:logo"; swap in the real image wherever the site is shown or saved.
+  const withLogo = (text) => text.split('sogilex:logo').join(kit.logo || BLANK_PNG);
   let lastBuildId = null; // set when a build finishes; publishing uses it
   let builtOk = false;
   let siteName = '';
@@ -36,7 +40,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -57,6 +61,27 @@
     location.reload();
   });
 
+
+  // ---------- logo ----------
+  async function loadKit(uid) {
+    if (!window.SogilexBrand) return;
+    kit = await SogilexBrand.load(db, uid);
+    $('logo-field').hidden = false;
+    SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); if (html) paint(true); } });
+    logoSwatches();
+  }
+  // The logo's colours appear first among the accent presets.
+  function logoSwatches() {
+    const box = document.querySelector('.swatches');
+    box.querySelectorAll('.logo-swatch').forEach((b) => b.remove());
+    [...(kit.colors || [])].reverse().forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'logo-swatch'; b.style.setProperty('--c', c); b.dataset.c = c;
+      b.setAttribute('aria-label', `Logo colour ${c}`); b.title = `From your logo: ${c}`;
+      b.addEventListener('click', () => { $('accent').value = c.toLowerCase(); $('accent-auto').checked = false; });
+      box.prepend(b);
+    });
+  }
 
   // ---------- the brief ----------
   $('desc').addEventListener('input', () => { $('desc-count').textContent = $('desc').value.length.toLocaleString(); });
@@ -154,7 +179,7 @@
   // ---------- preview ----------
   let paintTimer = null;
   function paint(final) {
-    const doc = final ? html : html + '\n</body></html>';
+    const doc = withLogo(final ? html : html + '\n</body></html>');
     $('frame').srcdoc = doc;
     $('empty').hidden = html.length > 0;
     $('size').textContent = html ? `${(new Blob([html]).size / 1024).toFixed(1)} KB` : '';
@@ -198,6 +223,8 @@
           description, name: siteName,
           style: (document.querySelector('input[name="style"]:checked') || {}).value || 'clean',
           accent: $('accent-auto').checked ? '' : $('accent').value,
+          logo: !!kit.logo,
+          logo_colors: kit.logo ? (kit.colors || []) : [],
         }),
       });
       if (!res.ok || !res.body) {
@@ -245,13 +272,13 @@
   // ---------- results ----------
   $('download').addEventListener('click', () => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    a.href = URL.createObjectURL(new Blob([withLogo(html)], { type: 'text/html' }));
     a.download = `${slug(siteName)}.html`;
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
   $('copy').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(html); $('copy').textContent = 'Copied'; }
+    try { await navigator.clipboard.writeText(withLogo(html)); $('copy').textContent = 'Copied'; }
     catch { $('copy').textContent = 'Copy failed'; }
     setTimeout(() => { $('copy').textContent = 'Copy code'; }, 1800);
   });
@@ -264,7 +291,7 @@
     const f = w.document.createElement('iframe');
     f.setAttribute('sandbox', '');
     f.style.cssText = 'border:0;width:100vw;height:100vh;display:block';
-    f.srcdoc = html;
+    f.srcdoc = withLogo(html);
     w.document.body.append(f);
   });
 })();

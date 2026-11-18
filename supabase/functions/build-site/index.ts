@@ -85,12 +85,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (userError || !userData?.user) return json({ error: "Your sign-in has expired. Sign in again." }, 401, cors);
 
   // 2. Validate the request.
-  let body: { description?: unknown; name?: unknown; style?: unknown; accent?: unknown };
+  let body: { description?: unknown; name?: unknown; style?: unknown; accent?: unknown; logo?: unknown; logo_colors?: unknown };
   try { body = await req.json(); } catch { return json({ error: "Send JSON." }, 400, cors); }
   const description = typeof body.description === "string" ? body.description.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
   const style = STYLES.includes(body.style as typeof STYLES[number]) ? (body.style as string) : "clean";
   const accent = typeof body.accent === "string" && /^#[0-9a-fA-F]{6}$/.test(body.accent) ? body.accent : "";
+  const hasLogo = body.logo === true;
+  const logoColors = Array.isArray(body.logo_colors) ? body.logo_colors.filter((c) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 4) : [];
   if (description.length < 10) return json({ error: "Describe the site in a sentence or two (at least 10 characters)." }, 400, cors);
   if (description.length > 1500) return json({ error: "Keep the description under 1,500 characters." }, 400, cors);
 
@@ -121,7 +123,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     name ? `Site or business name: ${name}` : "No name given: use a short placeholder like [SITE NAME].",
     `Visual style: ${STYLE_NOTES[style] ?? style}.`,
     accent ? `Accent colour: ${accent}.` : "Accent colour: your choice, to suit the style.",
-  ].join("\n");
+    hasLogo ? "The business has its own logo. Show it in the header (and, if it suits, the footer) with exactly this tag: <img src=\"sogilex:logo\" alt=\"" + (name || "Business").replace(/"/g, "") + " logo\">, sized with CSS (about 40 to 64px tall, width auto). Don't draw, describe or invent any other logo or wordmark." : "",
+    logoColors.length ? `Brand colours taken from the logo: ${logoColors.join(", ")}. Build the palette around them, keeping WCAG AA contrast.` : "",
+  ].filter(Boolean).join("\n");
 
   const anthropic = new Anthropic({ apiKey });
 

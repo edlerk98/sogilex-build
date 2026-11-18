@@ -52,13 +52,14 @@ nav a[aria-current="page"] { color: var(--text); }
 }
 .menu-page.a4 { width: 210mm; height: 297mm; }
 .m-head { text-align: center; margin-bottom: calc(18pt * var(--s)); }
+.m-logo { display: block; margin: 0 auto calc(10pt * var(--s)); max-height: calc(64pt * var(--s)); max-width: 60%; object-fit: contain; }
 .m-name { margin: 0; font-size: calc(28pt * var(--s)); letter-spacing: .14em; text-transform: uppercase; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
 .m-tagline { margin: calc(5pt * var(--s)) 0 0; font-style: italic; color: #6B5D52; }
 .m-rule { width: 48pt; height: 1px; background: #B7A99A; margin: calc(12pt * var(--s)) auto 0; }
 .m-body { flex: 1; min-height: 0; overflow: hidden; }
 .m-body.two { column-count: 2; column-gap: calc(28pt * var(--s)); }
 .m-sec { margin-bottom: calc(16pt * var(--s)); }
-.m-sec h2 { margin: 0 0 calc(8pt * var(--s)); font-size: calc(10.5pt * var(--s)); letter-spacing: .24em; text-transform: uppercase; color: #8E3B24; font-weight: 600; break-after: avoid; }
+.m-sec h2 { margin: 0 0 calc(8pt * var(--s)); font-size: calc(10.5pt * var(--s)); letter-spacing: .24em; text-transform: uppercase; color: var(--m-accent, #8E3B24); font-weight: 600; break-after: avoid; }
 .m-note { margin: calc(-3pt * var(--s)) 0 calc(8pt * var(--s)); font-style: italic; color: #6B5D52; font-size: .9em; }
 .m-item { break-inside: avoid; display: grid; grid-template-columns: 1fr auto; column-gap: 12pt; margin-bottom: calc(8pt * var(--s)); }
 .m-iname { font-weight: 600; overflow-wrap: anywhere; }

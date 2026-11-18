@@ -17,6 +17,8 @@ with Sogilex sign-in).
 - At publish time the Worker strips scripts, frames, objects, `<base>`, meta refresh, external stylesheets,
   event handlers, `javascript:` links, password fields and comments; points every form at `/__form`; adds a
   honeypot field and the "Made with Sogilex · Report this site" footer.
+- Logos: Build writes `<img src="sogilex:logo">`; at publish time the Worker swaps in the owner's logo from
+  `brand_kits` (a PNG data URL), or removes the tag if there is none.
 - Served with a Content-Security-Policy that blocks all scripts and outside loads, plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).
 
