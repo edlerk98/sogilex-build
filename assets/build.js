@@ -16,6 +16,8 @@
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
 
   let html = '';
+  let lastBuildId = null; // set when a build finishes; publishing uses it
+  let builtOk = false;
   let siteName = '';
 
   // ---------- account ----------
@@ -34,7 +36,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -62,6 +64,92 @@
     $('accent').value = b.dataset.c; $('accent-auto').checked = false;
   }));
   $('accent').addEventListener('input', () => { $('accent-auto').checked = false; });
+
+  // ---------- publishing (name.sogilex.net) ----------
+  const PUBLISH_API = 'https://api.sogilex.net';
+  let site = { can_publish: false, slug: null, messages: 0 };
+  const slugify = (v) => (v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 32);
+
+  async function loadSite() {
+    try {
+      const { data, error } = await db.rpc('my_site').abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      site = data || site;
+    } catch { site = { can_publish: false, slug: null, messages: 0 }; }
+    refreshPublish();
+  }
+  function refreshPublish() {
+    $('publish').hidden = !site.can_publish;
+    if (!site.can_publish) return;
+    const live = !!site.slug;
+    $('pub-live').hidden = !live;
+    if (live) {
+      const url = `https://${site.slug}.sogilex.net/`;
+      $('pub-link').href = url; $('pub-link').textContent = `${site.slug}.sogilex.net`;
+      $('pub-count').textContent = String(site.messages || 0);
+    }
+    if (!$('pub-slug').value) $('pub-slug').value = site.slug || slugify($('name').value);
+    $('pub-go').disabled = !(builtOk && lastBuildId);
+    $('pub-go').textContent = live ? 'Publish this site instead' : 'Publish this site';
+    $('pub-hint').textContent = builtOk && lastBuildId
+      ? (live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.')
+      : 'Build a site first, then publish it here.';
+  }
+  async function publishCall(path, body) {
+    const s = await session();
+    if (!s) throw new Error('Your sign-in has expired. Sign in again.');
+    const res = await fetch(PUBLISH_API + path, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${s.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: AbortSignal.timeout(20000),
+    });
+    let data = {};
+    try { data = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) throw new Error(data.error || `Publishing failed (${res.status}).`);
+    return data;
+  }
+  $('pub-slug').addEventListener('input', () => { const v = slugify($('pub-slug').value); if (v !== $('pub-slug').value) $('pub-slug').value = v; });
+  $('pub-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const st = $('pub-status'); st.className = 'status';
+    const slugValue = slugify($('pub-slug').value);
+    if (slugValue.length < 3) { st.textContent = 'Choose an address of at least 3 letters or numbers.'; st.classList.add('err'); $('pub-slug').focus(); return; }
+    $('pub-go').disabled = true; st.textContent = 'Publishing…';
+    try {
+      const out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue });
+      st.innerHTML = ''; st.append('Live at ', Object.assign(document.createElement('a'), { href: out.url, target: '_blank', rel: 'noopener', textContent: out.url }), '. It can take a minute to appear the very first time.');
+      st.classList.add('ok');
+      await loadSite();
+    } catch (err) { st.textContent = err.message; st.classList.add('err'); refreshPublish(); }
+  });
+  $('pub-off').addEventListener('click', async () => {
+    if (!confirm(`Take ${site.slug}.sogilex.net offline? You can publish again any time.`)) return;
+    const st = $('pub-status'); st.className = 'status'; st.textContent = 'Taking it offline…';
+    try { await publishCall('/unpublish'); st.textContent = 'Your site is offline.'; st.classList.add('ok'); await loadSite(); }
+    catch (err) { st.textContent = err.message; st.classList.add('err'); }
+  });
+  $('pub-messages').addEventListener('click', async () => {
+    const list = $('msg-list'); list.textContent = 'Loading…';
+    $('msgdialog').showModal();
+    try {
+      const { data, error } = await db.from('site_messages').select('created_at, slug, fields').order('created_at', { ascending: false }).limit(100).abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      list.textContent = '';
+      if (!data.length) { list.textContent = 'No messages yet. When someone uses the contact form on your site, it shows up here.'; return; }
+      for (const m of data) {
+        const box = document.createElement('div'); box.className = 'msg';
+        const t = document.createElement('time'); t.dateTime = m.created_at; t.textContent = new Date(m.created_at).toLocaleString() + ' · ' + m.slug + '.sogilex.net';
+        const dl = document.createElement('dl');
+        for (const [k, v] of Object.entries(m.fields || {})) {
+          const dt = document.createElement('dt'); dt.textContent = k;
+          const dd = document.createElement('dd'); dd.textContent = v;
+          dl.append(dt, dd);
+        }
+        box.append(t, dl); list.append(box);
+      }
+    } catch { list.textContent = "Couldn't load messages. Try again in a moment."; }
+  });
 
   // ---------- preview ----------
   let paintTimer = null;
@@ -95,6 +183,7 @@
     siteName = $('name').value.trim();
     $('addr').textContent = `${slug(siteName)}.html`;
     html = ''; paint(true); setDone(false);
+    builtOk = false; lastBuildId = null; refreshPublish();
     const go = $('go'); go.disabled = true; go.classList.add('working'); go.firstChild.textContent = 'Building… ';
     $('frame').closest('.preview').classList.add('building');
     st.textContent = 'Designing your site. This usually takes one to two minutes.';
@@ -128,7 +217,8 @@
           const lineText = buf.slice(0, nl); buf = buf.slice(nl + 1);
           if (!lineText.trim()) continue;
           const msg = JSON.parse(lineText);
-          if (msg.t === 'delta') { html += msg.text; schedulePaint(); }
+          if (msg.t === 'meta') { lastBuildId = msg.build_id || null; }
+          else if (msg.t === 'delta') { html += msg.text; schedulePaint(); }
           else if (msg.t === 'done') finished = true;
           else if (msg.t === 'error') failed = msg.message;
         }
@@ -146,6 +236,7 @@
       if (html) { html = clean(html); paint(true); }
     } else {
       html = clean(html); paint(true); setDone(true);
+      builtOk = true; refreshPublish();
       st.textContent = 'Done. Download it, or tweak the brief and build again.'; st.classList.add('ok');
     }
     showQuota();

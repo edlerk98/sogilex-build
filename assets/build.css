@@ -159,3 +159,21 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .pwdialog form[method="dialog"] { margin: 0; }
 .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--ctl); }
 .btn-secondary:hover:not(:disabled) { box-shadow: none; border-color: var(--text); }
+
+/* publishing */
+.publish { border-top: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.pub-form { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.pub-form label { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+.pub-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pub-row .input { flex: 1 1 180px; width: auto; }
+.pub-suffix { font-family: var(--mono); font-size: 14px; color: var(--mute); }
+.hint-line { margin: 0; font-size: 13px; color: var(--mute); }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--magenta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 32px; }
+.linkish:hover { color: var(--lime); }
+.msgdialog { max-width: min(640px, calc(100vw - 32px)); }
+.msg-list { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow: auto; }
+.msg { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: rgba(18, 10, 24, .6); }
+.msg time { display: block; font-family: var(--mono); font-size: 12px; color: var(--mute); margin-bottom: 6px; }
+.msg dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.msg dt { color: var(--mute); font-size: 14px; }
+.msg dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

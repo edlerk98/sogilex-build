@@ -116,6 +116,23 @@
         <button class="ghost" type="button" id="copy" disabled>Copy code</button>
         <button class="ghost" type="button" id="newtab" disabled>Open full size</button>
       </div>
+      <section class="publish" id="publish" hidden aria-labelledby="pub-h">
+        <div class="panel-row">
+          <h2 class="panel-h" id="pub-h">Publish</h2>
+          <span class="quota" id="pub-tag">Beta</span>
+        </div>
+        <p class="muted" id="pub-live" hidden>Live at <a id="pub-link" href="#" target="_blank" rel="noopener"></a> · <button type="button" class="linkish" id="pub-messages">Messages (<span id="pub-count">0</span>)</button> · <button type="button" class="linkish" id="pub-off">Unpublish</button></p>
+        <form id="pub-form" class="pub-form" novalidate>
+          <label for="pub-slug">Web address</label>
+          <div class="pub-row">
+            <input class="input" id="pub-slug" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength="32" placeholder="your-business" pattern="[a-z0-9-]{3,32}">
+            <span class="pub-suffix">.sogilex.net</span>
+            <button class="btn" type="submit" id="pub-go" disabled>Publish this site</button>
+          </div>
+          <p class="hint-line" id="pub-hint">Build a site first, then publish it here. Publishing again replaces your current site.</p>
+        </form>
+        <p class="status" id="pub-status" role="status" aria-live="polite"></p>
+      </section>
     </div>
   </section>
 
@@ -132,13 +149,22 @@
     <h2 id="limits-h">Privacy &amp; limits</h2>
     <ul class="notes">
       <li><b>Three free builds a day</b> per person while Sogilex Build is in beta.</li>
-      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description or the generated site; we only record when a build happened and how long it was, to manage costs.</li>
+      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description. We keep each finished site so you can publish it, and we record when builds happen and how long they take, to manage costs.</li>
+      <li><b>Publishing (beta)</b> puts your site at <code>your-name.sogilex.net</code>. Messages sent through its contact form are stored for you and shown in Build. Published sites carry a small "Made with Sogilex" footer with a link to report abuse.</li>
       <li><b>Facts stay yours to fill in.</b> Build never invents prices, phone numbers, addresses or reviews. It leaves placeholders like <code>[PHONE NUMBER]</code> for you to replace.</li>
       <li><b>No logins or look-alikes.</b> Build won't make pages that imitate real companies or collect passwords or card details.</li>
       <li><b>The site is yours.</b> Use, edit and publish what you download however you like.</li>
     </ul>
   </section>
 </main>
+
+<dialog id="msgdialog" class="pwdialog msgdialog" aria-labelledby="msg-h">
+  <div class="stack">
+    <h2 class="panel-h" id="msg-h">Messages from your site</h2>
+    <div id="msg-list" class="msg-list"></div>
+    <form method="dialog"><button class="btn btn-secondary" type="submit">Close</button></form>
+  </div>
+</dialog>
 
 <dialog id="pwdialog" class="pwdialog" aria-labelledby="pw-h">
   <div class="stack">
