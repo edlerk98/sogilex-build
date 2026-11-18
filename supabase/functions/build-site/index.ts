@@ -9,6 +9,9 @@ const PUBLISHABLE_KEY = "sb_publishable_SLyXLfw7hZQTL_xEpofo8g_XgKZZStM";
 const ALLOWED_ORIGINS = ["https://build.sogilex.com"];
 const MODEL = "claude-opus-5-5";
 const STYLES = ["clean", "bold", "playful", "elegant", "dark"] as const;
+// Supabase's free plan stops a function at 150 s. Stop the build ourselves first, so the person gets a clear
+// message and the build is recorded as failed (which doesn't count toward their daily builds).
+const DEADLINE_MS = 140_000;
 
 const SYSTEM = `You are Sogilex Build, a senior web designer who writes complete single-file websites.
 
@@ -48,6 +51,7 @@ function json(body: Record<string, unknown>, status: number, cors: Record<string
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
+  const startedAt = Date.now();
   const cors = corsHeaders(req.headers.get("origin") ?? "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return json({ error: "Use POST." }, 405, cors);
@@ -111,6 +115,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let inTokens: number | null = null;
       let outTokens: number | null = null;
       let stop: string | null = null;
+      let timedOut = false;
+      let timer: number | undefined;
       try {
         const stream = anthropic.beta.messages.stream({
           model: MODEL,
@@ -122,6 +128,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           system: SYSTEM,
           messages: [{ role: "user", content: request }],
         });
+        timer = setTimeout(() => { timedOut = true; stream.abort(); }, Math.max(0, DEADLINE_MS - (Date.now() - startedAt)));
         for await (const event of stream) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             controller.enqueue(line({ t: "delta", text: event.delta.text }));
@@ -141,13 +148,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
         }
       } catch (err) {
         let message = "Something went wrong while building. Please try again.";
-        if (err instanceof Anthropic.RateLimitError) message = "The AI service is busy. Please try again in a minute.";
+        if (timedOut) message = "This site was taking too long to build, so it was stopped. This one didn't count toward your daily builds. Try a shorter description.";
+        else if (err instanceof Anthropic.RateLimitError) message = "The AI service is busy. Please try again in a minute.";
         else if (err instanceof Anthropic.AuthenticationError) message = "Sogilex Build's AI key isn't working. The site owner needs to fix it.";
         else if (err instanceof Anthropic.APIError && (err.status ?? 0) >= 500) message = "The AI service had a problem. Please try again.";
-        stop = "error";
-        console.error("build-site failed", err);
+        stop = timedOut ? "timeout" : "error";
+        if (!timedOut) console.error("build-site failed", err);
         controller.enqueue(line({ t: "error", message }));
       } finally {
+        clearTimeout(timer);
         const { error: finishError } = admin
           ? await admin.rpc("finish_build", { build_id: buildId, ok, in_tokens: inTokens, out_tokens: outTokens, stop })
           : { error: null };
