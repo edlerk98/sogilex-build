@@ -120,10 +120,13 @@ window.SogilexPhotos = (() => {
   }
 
   // The "Your photos" box. onChange(photos) runs whenever the list changes.
-  function mount(root, { db, uid, onChange, onAdded }) {
+  // isOnSite(id): true / false for the site open in Build, or null when no site is open (or it's busy).
+  // onAddToSite(photos): put these photos on the open site.
+  function mount(root, { db, uid, onChange, onAdded, isOnSite, onAddToSite }) {
     let photos = [];
     let map = {};
     const grid = h('div', { class: 'photo-grid' });
+    const addAll = h('button', { type: 'button', class: 'btn photo-addall', hidden: true });
     const count = h('span', { class: 'photo-count', 'aria-live': 'polite' });
     const status = h('p', { class: 'photo-status', role: 'status', 'aria-live': 'polite' });
     const input = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: () => { add([...input.files]); input.value = ''; } });
@@ -133,12 +136,17 @@ window.SogilexPhotos = (() => {
     ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
     ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
     drop.addEventListener('drop', (e) => { e.preventDefault(); add([...(e.dataTransfer.files || [])]); });
-    root.replaceChildren(drop, input, count, grid, status,
+    root.replaceChildren(drop, input, count, addAll, grid, status,
       h('p', { class: 'photo-hint', text: 'Give each photo a short name (for example "Beach wedding"). Build uses your photos when it designs a new site. To put new photos on a site you already made, use "Change your site". Photos stay private until you publish a site that uses them.' }));
 
     function setStatus(text, err) { status.textContent = text; status.classList.toggle('err', !!err); }
     function render() {
       count.textContent = photos.length ? `${photos.length} of ${MAX_PHOTOS} photos` : '';
+      const where = (p) => (isOnSite ? isOnSite(p.id) : null);
+      const missing = photos.filter((p) => where(p) === false);
+      addAll.hidden = missing.length < 2;
+      addAll.textContent = `Add the ${missing.length} photos that aren't on this site`;
+      addAll.onclick = () => onAddToSite && onAddToSite(missing);
       grid.replaceChildren(...photos.map((p) => {
         const name = h('input', { class: 'input photo-name', type: 'text', maxlength: '80', value: p.name, placeholder: "What's in it?", 'aria-label': 'Photo name' });
         let t = null;
@@ -154,7 +162,9 @@ window.SogilexPhotos = (() => {
         return h('figure', { class: 'photo' },
           h('img', { src: map[p.id + ':t'] || map[p.id] || BLANK, alt: p.name || 'Your photo', loading: 'lazy' }),
           h('button', { type: 'button', class: 'photo-x', 'aria-label': `Remove ${p.name || 'this photo'}`, text: '✕', onclick: () => remove(p) }),
-          name);
+          name,
+          where(p) === true ? h('span', { class: 'photo-on', text: '✓ On this site' }) : null,
+          where(p) === false ? h('button', { type: 'button', class: 'photo-add', text: '+ Add to site', 'aria-label': `Add ${p.name || 'this photo'} to the site`, onclick: () => onAddToSite && onAddToSite([p]) }) : null);
       }));
     }
     async function refresh(force) {
@@ -195,7 +205,7 @@ window.SogilexPhotos = (() => {
       await refresh();
     }
     refresh();
-    return { refresh, get photos() { return photos; }, get links() { return map; } };
+    return { refresh, render, get photos() { return photos; }, get links() { return map; } };
   }
 
   return { mount, list, links, fill, inline, idsIn, TAG, BLANK };

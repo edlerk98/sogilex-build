@@ -88,6 +88,8 @@
       db, uid,
       onChange: (photos) => { $('use-photos-row').hidden = !photos.length; if (html) paint(true); },
       onAdded: (added) => offerNewPhotos(added),
+      isOnSite: (id) => (builtOk && lastBuildId && !building && !editing ? html.includes('sogilex:photo:' + id) : null),
+      onAddToSite: (list) => addPhotosToSite(list),
     });
     // Preview links last an hour: renew them before they run out.
     setInterval(() => { if (photoBox) photoBox.refresh(true); }, 40 * 60 * 1000);
@@ -277,6 +279,7 @@
     $('go').disabled = on || building;
     $('edit-go').textContent = on ? 'Working…' : 'Make this change';
     refreshEdit();
+    if (photoBox) photoBox.render();
   }
   async function showEditQuota() {
     try {
@@ -306,17 +309,24 @@
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'btn chat-action';
     btn.textContent = n === 1 ? 'Add it to my site' : 'Add them to my site';
-    btn.addEventListener('click', () => {
-      btn.remove();
-      const display = n === 1 ? `Add ${what} to my site.` : `Add my ${n} new photos to my site.`;
+    btn.addEventListener('click', () => { btn.remove(); addPhotosToSite(added); });
+    box.append(document.createElement('br'), btn);
+    $('editchat').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  // Put these photos on the open site, as a chat edit that names exactly which photos.
+  function addPhotosToSite(added) {
+    if (editing || building || !lastBuildId || !added.length) return;
+    const n = added.length;
+    const one = (added[0].name || '').trim();
+    {
+      const display = n === 1 ? `Add ${one ? `"${one}"` : 'this photo'} to my site.` : `Add these ${n} photos to my site.`;
       // Name the new photos by tag so Claude can't mix them up; keep the request under the 1,000-character limit.
-      const lead = `${display} Put ${n === 1 ? 'it' : 'them'} with my other photos on the page (or wherever ${n === 1 ? 'it fits' : 'they fit'} best). ${n === 1 ? "It's" : "They're"} the newest in my photo list: `;
+      const lead = `${display} Put ${n === 1 ? 'it' : 'them'} with my other photos on the page (or wherever ${n === 1 ? 'it fits' : 'they fit'} best). The ${n === 1 ? 'photo is' : 'photos are'}: `;
       let list = added.map((p) => `sogilex:photo:${p.id}${p.name ? ` ("${p.name.replace(/["<>]/g, '').slice(0, 40)}")` : ''}`);
       if ((lead + list.join(', ')).length > 990) list = added.map((p) => `sogilex:photo:${p.id}`);
       while (list.length && (lead + list.join(', ')).length > 990) list.pop();
       sendEdit(display, lead + list.join(', ') + '.');
-    });
-    box.append(document.createElement('br'), btn);
+    }
     $('editchat').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   async function sendEdit(display, msg) {
@@ -385,6 +395,7 @@
     $('frame').srcdoc = doc;
     $('empty').hidden = html.length > 0;
     $('size').textContent = html ? `${(new Blob([html]).size / 1024).toFixed(1)} KB` : '';
+    if (photoBox) photoBox.render();
   }
   function schedulePaint() { if (!paintTimer) paintTimer = setTimeout(() => { paintTimer = null; paint(false); }, 700); }
   const slug = (s) => (s || 'my-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'my-site';
