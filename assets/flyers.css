@@ -1,0 +1,102 @@
+/* Sogilex Flyers. The editor reuses the Menus styles (menus.css); this file is the flyer itself.
+   Everything below the marker is also embedded in "Save image", so it must stand on its own (no outside urls). */
+.flyer-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.flyer-list .mselect { flex: 1 1 200px; min-width: 0; }
+.sheets .flyer { box-shadow: 0 20px 60px rgba(0, 0, 0, .45); flex: none; }
+#print-root .flyer { transform: none !important; box-shadow: none !important; }
+.mtext { width: 100%; min-height: 84px; resize: vertical; }
+
+/* ===== flyer page ===== */
+.flyer {
+  --s: 1; --hsz: 64pt;
+  --f-bg: #FBF8F2; --f-ink: #221C18; --f-muted: #6B5D52; --f-accent: #8E3B24; --f-on: #FFFFFF;
+  --f-rule: color-mix(in srgb, var(--f-muted) 40%, var(--f-bg));
+  --f-body: 'EB Garamond', Georgia, serif; --f-bs: 1;
+  --f-head: 'EB Garamond', Georgia, serif; --f-head-tf: none; --f-head-ls: -.005em; --f-head-w: 600; --f-head-lh: 1.02; --f-hs: 1;
+  --f-label: 'EB Garamond', Georgia, serif; --f-label-ls: .2em; --f-label-w: 600;
+  position: relative; box-sizing: border-box; overflow: hidden;
+  width: 8.5in; height: 11in;
+  background: var(--f-bg); color: var(--f-ink); font-family: var(--f-body);
+  font-size: calc(15pt * var(--s) * var(--f-bs)); line-height: 1.35;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.flyer.size-a4 { width: 210mm; height: 297mm; }
+.flyer.size-square { width: 8in; height: 8in; font-size: calc(13pt * var(--s) * var(--f-bs)); }
+.flyer *, .flyer *::before, .flyer *::after { box-sizing: border-box; }
+.flyer.font-elegant { --f-head: 'Playfair Display', Georgia, serif; --f-head-w: 600; --f-head-ls: -.01em; --f-head-lh: 1.04;
+  --f-label: 'Playfair Display', Georgia, serif; --f-label-ls: .14em; }
+.flyer.font-modern { --f-body: Inter, system-ui, sans-serif; --f-bs: .88; --f-head: Inter, system-ui, sans-serif; --f-head-ls: -.035em; --f-head-lh: .98; --f-hs: .92;
+  --f-label: Inter, system-ui, sans-serif; --f-label-ls: .16em; }
+.flyer.font-bold { --f-body: Inter, system-ui, sans-serif; --f-bs: .88; --f-head: 'Bebas Neue', Impact, sans-serif; --f-head-tf: uppercase; --f-head-ls: .01em; --f-head-w: 400; --f-head-lh: .9; --f-hs: 1.3;
+  --f-label: Inter, system-ui, sans-serif; --f-label-ls: .16em; }
+.flyer.font-warm { --f-body: Fraunces, Georgia, serif; --f-bs: .94; --f-head: Fraunces, Georgia, serif; --f-head-ls: -.02em; --f-head-lh: 1.0;
+  --f-label: Fraunces, Georgia, serif; --f-label-ls: .14em; }
+
+.f-inner { min-height: 100%; display: flex; flex-direction: column; gap: calc(22pt * var(--s)); padding: .65in .7in .55in; }
+.size-square .f-inner { padding: .55in .6in .45in; gap: calc(16pt * var(--s)); }
+.f-brand { display: flex; align-items: center; gap: 10pt; min-height: 0; }
+.f-logo { display: block; max-height: calc(54pt * var(--s)); max-width: 2.6in; object-fit: contain; }
+.f-bizname { font-family: var(--f-label); font-size: .78em; letter-spacing: var(--f-label-ls); text-transform: uppercase; font-weight: var(--f-label-w); color: var(--f-muted); }
+.f-hero { display: flex; flex-direction: column; gap: calc(10pt * var(--s)); }
+.f-kicker { margin: 0; font-family: var(--f-label); font-size: .82em; letter-spacing: var(--f-label-ls); text-transform: uppercase; font-weight: var(--f-label-w); color: var(--f-accent); }
+.f-head { margin: 0; font-family: var(--f-head); font-weight: var(--f-head-w); text-transform: var(--f-head-tf); letter-spacing: var(--f-head-ls);
+  line-height: var(--f-head-lh); font-size: calc(var(--hsz) * var(--s) * var(--f-hs)); overflow-wrap: normal; text-wrap: balance; }
+.f-sub { margin: calc(4pt * var(--s)) 0 0; font-size: 1.22em; line-height: 1.3; color: var(--f-muted); text-wrap: pretty; }
+.f-offer { margin: 0; font-family: var(--f-head); font-weight: var(--f-head-w); text-transform: var(--f-head-tf); letter-spacing: var(--f-head-ls);
+  font-size: calc(var(--hsz) * .62 * var(--s) * var(--f-hs)); line-height: 1; color: var(--f-accent); overflow-wrap: normal; }
+.flyer.f-break .f-head, .flyer.f-break .f-offer { overflow-wrap: anywhere; }
+.f-info { display: flex; flex-direction: column; gap: calc(8pt * var(--s)); }
+.f-row { display: flex; flex-direction: column; gap: 1pt; }
+.f-lab { font-family: var(--f-label); font-size: .66em; letter-spacing: var(--f-label-ls); text-transform: uppercase; font-weight: var(--f-label-w); color: var(--f-muted); }
+.f-val { font-size: 1.3em; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.f-details { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: calc(5pt * var(--s)); }
+.f-details li { overflow-wrap: anywhere; }
+.f-cta { align-self: flex-start; margin: 0; padding: calc(9pt * var(--s)) calc(16pt * var(--s)); background: var(--f-accent); color: var(--f-on); font-weight: 600; font-size: 1.08em; border-radius: 4pt; line-height: 1.25; overflow-wrap: anywhere; max-width: 100%; }
+.f-mid { display: flex; flex-direction: column; gap: calc(22pt * var(--s)); margin-block: auto; }
+.size-square .f-mid { gap: calc(16pt * var(--s)); }
+.f-head, .f-offer, .f-val { max-width: 100%; }
+.f-foot { display: flex; align-items: center; gap: calc(14pt * var(--s)); padding-top: calc(12pt * var(--s)); border-top: 1px solid var(--f-rule); font-size: .92em; color: var(--f-ink); }
+.f-foot p { margin: 0; }
+.f-foot-text { min-width: 0; display: flex; flex-direction: column; gap: 2pt; overflow-wrap: anywhere; }
+.f-fine { font-size: .86em; font-style: italic; color: var(--f-muted); }
+.f-qr { display: flex; align-items: center; gap: 8pt; flex: none; }
+.f-qr-code { width: 1in; height: 1in; display: block; border-radius: 3pt; }
+.size-square .f-qr-code { width: .85in; height: .85in; }
+.f-qr-label { max-width: 1.3in; font-weight: 600; color: var(--f-ink); line-height: 1.25; }
+.f-empty { color: var(--f-muted); font-style: italic; }
+
+/* layout: Poster (centred, headline in the middle of the page) */
+.layout-poster .f-inner { text-align: center; align-items: stretch; }
+.layout-poster .f-brand { justify-content: center; flex-direction: column; gap: 6pt; }
+.layout-poster .f-mid { align-items: center; }
+.layout-poster .f-hero { align-items: center; align-self: stretch; }
+.f-mid > * { max-width: 100%; }
+.layout-poster .f-info { align-items: center; }
+.layout-poster .f-details { align-items: center; }
+.layout-poster .f-cta { align-self: center; }
+.layout-poster .f-foot { justify-content: center; text-align: left; }
+.layout-poster .f-foot:not(.has-qr) { text-align: center; }
+
+/* layout: Colour block (the headline sits on a band of the accent colour) */
+.layout-block .f-band { background: var(--f-accent); color: var(--f-on); margin: -.65in -.7in 0; padding: .65in .7in calc(28pt * var(--s)); display: flex; flex-direction: column; gap: calc(22pt * var(--s)); }
+.size-square.layout-block .f-band { margin: -.55in -.6in 0; padding: .55in .6in calc(22pt * var(--s)); gap: calc(16pt * var(--s)); }
+.layout-block .f-band .f-kicker, .layout-block .f-band .f-bizname { color: var(--f-on); opacity: .88; }
+.layout-block .f-band .f-sub { color: var(--f-on); opacity: .9; }
+.layout-block .f-logo-tile { background: #FFFFFF; border-radius: 6pt; padding: 6pt 8pt; display: inline-flex; }
+.layout-block .f-cta { background: var(--f-ink); color: var(--f-bg); }
+
+/* layout: Left-aligned (editorial; labelled rows with rules) */
+.layout-left .f-inner { border-top: calc(10pt * var(--s)) solid var(--f-accent); }
+.layout-left .f-info { gap: 0; border-top: 1px solid var(--f-rule); }
+.layout-left .f-row { flex-direction: row; align-items: baseline; gap: 14pt; padding: calc(8pt * var(--s)) 0; border-bottom: 1px solid var(--f-rule); }
+.layout-left .f-lab { flex: 0 0 .9in; }
+.layout-left .f-details li { padding-left: 14pt; position: relative; }
+.layout-left .f-details li::before { content: ""; position: absolute; left: 0; top: .6em; width: 6pt; height: 1.5pt; background: var(--f-accent); }
+.layout-left .f-mid { margin-top: 0; }
+.layout-left .f-foot { margin-top: auto; }
+/* ===== end flyer page ===== */
+
+@media print {
+  #print-root .flyer { break-after: page; }
+  #print-root .flyer:last-child { break-after: auto; }
+}
