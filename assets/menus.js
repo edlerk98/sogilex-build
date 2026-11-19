@@ -74,8 +74,54 @@
     }));
     return m;
   }
+  // The menu's logo: its own if the owner chose one for the menu only, otherwise the account's (shared with the website).
+  const menuLogo = () => (kit.menu_logo
+    ? { logo: kit.menu_logo, name: kit.menu_logo_name, colors: kit.menu_colors || [], own: true }
+    : { logo: kit.logo, name: kit.logo_name, colors: kit.colors || [], own: false });
+  async function saveMenuLogo(next) {
+    const { error } = await db.from('brand_kits').upsert({ user_id: uid, menu_logo: next.menu_logo, menu_logo_name: next.menu_logo_name, menu_colors: next.menu_colors || [], updated_at: new Date().toISOString() }).abortSignal(AbortSignal.timeout(15000));
+    if (error) throw error;
+    kit = { ...kit, ...next };
+  }
+  function menuLogoBox() {
+    const ml = menuLogo();
+    const status = h('p', { class: 'mhint mread-status', role: 'status', 'aria-live': 'polite' });
+    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/svg+xml,.pdf', hidden: true });
+    input.addEventListener('change', async () => {
+      const file = input.files[0]; input.value = '';
+      if (!file) return;
+      status.textContent = 'Adding the menu logo…'; status.classList.remove('err');
+      try {
+        const k = await SogilexBrand.fileToKit(file);
+        await saveMenuLogo({ menu_logo: k.logo, menu_logo_name: k.logo_name, menu_colors: k.colors });
+        menu.showLogo = true; changed(true);
+      } catch (e) { status.textContent = (e && e.message) || "Couldn't add that logo."; status.classList.add('err'); }
+    });
+    if (ml.own) {
+      return h('div', { class: 'mlogo-own' },
+        h('div', { class: 'logo-have' },
+          h('div', { class: 'logo-thumb' }, h('img', { src: ml.logo, alt: 'Menu logo' })),
+          h('div', { class: 'logo-meta' },
+            h('span', { class: 'logo-name', text: ml.name || 'Menu logo' }),
+            h('span', { class: 'mhint', text: 'Used on this menu only. Your website keeps its own logo.' }),
+            h('span', { class: 'logo-actions' },
+              h('button', { type: 'button', class: 'linkish', text: 'Replace', onclick: () => input.click() }),
+              h('button', { type: 'button', class: 'linkish', text: kit.logo ? 'Use my shared logo instead' : 'Remove', onclick: async () => {
+                try { await saveMenuLogo({ menu_logo: null, menu_logo_name: null, menu_colors: [] }); if (menu.palette === 'logo' && !(kit.colors && kit.colors[0])) menu.palette = 'cream'; changed(true); }
+                catch { status.textContent = "Couldn't change it. Try again."; status.classList.add('err'); }
+              } })))),
+        input, status);
+    }
+    const shared = h('div');
+    if (uid && window.SogilexBrand) SogilexBrand.mountLogo(shared, { db, uid, kit, onChange: (k) => { kit = { ...kit, ...k }; renderEditor(); renderPreview(); } });
+    return h('div', {},
+      shared,
+      h('p', { class: 'mhint', text: kit.logo ? 'This logo is shared with your website: changing it here changes it there too.' : 'A logo added here is also used on your website. You can choose a different one for the menu afterwards.' }),
+      kit.logo ? h('button', { type: 'button', class: 'iconbtn', text: 'Use a different logo for this menu', onclick: () => input.click() }) : null,
+      input, status);
+  }
   function paletteOf(id) {
-    if (id === 'logo' && kit.colors && kit.colors[0]) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(kit.colors[0])];
+    if (id === 'logo' && menuLogo().colors[0]) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(menuLogo().colors[0])];
     return PALETTES.find((p) => p[0] === id) || PALETTES[0];
   }
 
@@ -338,11 +384,10 @@
       h('div', { class: 'field' }, h('label', { for: 'm-tag', text: 'Line under the name (optional)' }), field(menu, 'tagline', { id: 'm-tag', maxlength: '80', placeholder: 'Neighbourhood kitchen' })),
       h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showTagline, onchange: (e) => { menu.showTagline = e.target.checked; changed(); } }), 'Show this line on the menu')));
 
-    const logoBox = h('div');
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Logo' }),
-      logoBox,
-      kit.logo ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showLogo, onchange: (e) => { menu.showLogo = e.target.checked; changed(); } }), 'Show my logo at the top of the menu') : null,
+      uid ? menuLogoBox() : null,
+      menuLogo().logo ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showLogo, onchange: (e) => { menu.showLogo = e.target.checked; changed(); } }), 'Show my logo at the top of the menu') : null,
       null));
 
     // ---------- the look ----------
@@ -351,7 +396,7 @@
       style: extra && extra.style, title: extra && extra.title, onclick: () => { menu[key] = value; changed(true); },
     }, label);
     const palettes = [...PALETTES];
-    if (kit.colors && kit.colors[0]) palettes.unshift(paletteOf('logo'));
+    if (menuLogo().colors[0]) palettes.unshift(paletteOf('logo'));
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Look' }),
       h('p', { class: 'mhint', text: 'Every combination is designed to look good and stay easy to read.' }),
@@ -364,7 +409,6 @@
       h('div', { class: 'choices' }, LAYOUTS.map(([id, label]) => choice('layout', id, label))),
       h('div', { class: 'choice-label', text: 'Border' }),
       h('div', { class: 'choices' }, BORDERS.map(([id, label]) => choice('border', id, label)))));
-    if (uid && window.SogilexBrand) SogilexBrand.mountLogo(logoBox, { db, uid, kit, onChange: (k) => { kit = k; renderEditor(); renderPreview(); } });
 
     menu.sections.forEach((sec, si) => {
       const items = h('div', { class: 'mitems' });
@@ -559,7 +603,7 @@
       page.style.setProperty('--m-muted', muted); page.style.setProperty('--m-accent', accent);
       if (i === 0) {
         page.append(h('header', { class: 'm-head' },
-          kit.logo && menu.showLogo ? h('img', { class: 'm-logo', src: kit.logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
+          menuLogo().logo && menu.showLogo ? h('img', { class: 'm-logo', src: menuLogo().logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
           h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
           menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
           h('div', { class: 'm-rule' })));

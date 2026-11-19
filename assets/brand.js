@@ -21,7 +21,7 @@ window.SogilexBrand = (() => {
 
   async function load(db, uid) {
     try {
-      const { data, error } = await db.from('brand_kits').select('logo, logo_name, colors').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));
+      const { data, error } = await db.from('brand_kits').select('logo, logo_name, colors, menu_logo, menu_logo_name, menu_colors').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
       return await shrinkSaved(db, uid, data || { logo: null, logo_name: null, colors: [] });
     } catch { return { logo: null, logo_name: null, colors: [], failed: true }; }

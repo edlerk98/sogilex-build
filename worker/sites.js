@@ -48,6 +48,7 @@ export default {
     }
     if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveLogo(env, slug, req.method);
     if ((url.pathname === '/menu' || url.pathname === '/menu/') && (req.method === 'GET' || req.method === 'HEAD')) return serveMenu(env, slug, req.method);
+    if (url.pathname === '/menu-logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveMenuLogo(env, slug, req.method);
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
     if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
@@ -266,7 +267,8 @@ function menuPage(m) {
   const contact = [f.address, f.phone].map((x) => txt(x, 100)).filter(Boolean).join(' · ');
   const legend = Object.keys(MENU_TAGS).filter((k) => used.has(k)).map((k) => `${k} ${MENU_TAGS[k]}`).join(' · ');
   const title = txt(d.name, 60) || 'Menu';
-  const logo = m.logo && d.showLogo !== false ? '<img class="logo" src="sogilex:logo" alt="' + title + ' logo">' : '';
+  // The menu's own logo file: it can differ from the website's (/logo.png) when the owner chose one for the menu only.
+  const logo = m.logo && d.showLogo !== false ? '<img class="logo" src="/menu-logo.png" alt="' + title + ' logo">' : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · Menu</title><meta name="description" content="${title} menu${d.tagline ? ': ' + txt(d.tagline, 80) : ''}"><meta name="theme-color" content="${pal[0]}">
 <style>
@@ -303,10 +305,20 @@ ${sections || '<p>This menu is being updated. Please check back soon.</p>'}
 ${legend || contact || String(f.hours || '').trim() ? `<footer class="mf">${legend ? `<p>${legend}</p>` : ''}${String(f.hours || '').trim() ? `<p>${txt(f.hours, 100)}</p>` : ''}${contact ? `<p>${contact}</p>` : ''}</footer>` : ''}
 </main></body></html>`;
 }
+async function serveMenuLogo(env, slug, method) {
+  const m = await publicMenu(env, slug);
+  const b64 = m && typeof m.logo === 'string' && (m.logo.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/) || [])[1];
+  let bytes = null;
+  if (b64) { const bin = atob(b64); bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); }
+  if (!bytes || bytes[0] !== 0x89 || bytes[1] !== 0x50) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
+  return new Response(method === 'HEAD' ? null : bytes, {
+    headers: { 'Content-Type': 'image/png', 'Content-Length': String(bytes.length), 'Cache-Control': 'public, max-age=60', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', 'Strict-Transport-Security': 'max-age=31536000' },
+  });
+}
 async function serveMenu(env, slug, method) {
   const m = await publicMenu(env, slug);
   if (!m) return notFound();
-  const html = await prepare(menuPage(m), slug, !!m.logo && m.data.showLogo !== false);
+  const html = await prepare(menuPage(m), slug, false);
   return new Response(method === 'HEAD' ? null : html, { headers: { ...SITE_HEADERS, 'Cache-Control': 'public, max-age=60' } });
 }
 
