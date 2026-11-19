@@ -337,10 +337,10 @@
     return h('div', { class: 'mextras' },
       h('div', { class: 'mrow' },
         h('label', { class: 'mini' }, 'Starts with'),
-        field(ex, 'lead', { class: 'input elead', maxlength: '24', placeholder: 'Add', 'aria-label': 'Word before the add-ons, e.g. Add or Choice of' }),
+        field(ex, 'lead', { class: 'input elead', maxlength: '40', placeholder: 'Add', 'aria-label': 'Word before the add-ons, e.g. Add or Choice of' }),
         h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove these add-ons', text: '✕', onclick: () => { owner.extras = null; changed(true); } })),
       ex.list.map((x, i) => h('div', { class: 'mprice' },
-        field(x, 'name', { class: 'input ename', maxlength: '40', placeholder: i ? 'Avocado' : 'Bacon', 'aria-label': `Add-on ${i + 1}` }),
+        field(x, 'name', { class: 'input ename', maxlength: '60', placeholder: i ? 'Avocado' : 'Bacon', 'aria-label': `Add-on ${i + 1}` }),
         field(x, 'price', { class: 'input pamount', maxlength: '16', placeholder: '+2 (opt.)', 'aria-label': `Add-on ${i + 1} price` }),
         ex.list.length > 1 ? h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove this add-on', text: '✕', onclick: () => { ex.list.splice(i, 1); changed(true); } }) : null)),
       ex.list.length < 10 ? h('button', { type: 'button', class: 'iconbtn', text: '+ another', onclick: () => { ex.list.push({ name: '', price: '' }); changed(true); } }) : null);
@@ -381,7 +381,7 @@
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Restaurant' }),
       h('div', { class: 'field' }, h('label', { for: 'm-name', text: 'Name' }), field(menu, 'name', { id: 'm-name', maxlength: '60', placeholder: 'Ninth & Pine' })),
-      h('div', { class: 'field' }, h('label', { for: 'm-tag', text: 'Line under the name (optional)' }), field(menu, 'tagline', { id: 'm-tag', maxlength: '80', placeholder: 'Neighbourhood kitchen' })),
+      h('div', { class: 'field' }, h('label', { for: 'm-tag', text: 'Line under the name (optional)' }), field(menu, 'tagline', { id: 'm-tag', maxlength: '100', placeholder: 'Neighbourhood kitchen' })),
       h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showTagline, onchange: (e) => { menu.showTagline = e.target.checked; changed(); } }), 'Show this line on the menu')));
 
     wrap.append(h('div', { class: 'mgroup' },
@@ -414,16 +414,16 @@
       const items = h('div', { class: 'mitems' });
       sec.items.forEach((it, ii) => {
         const prices = it.prices.map((p, pi) => h('div', { class: 'mprice' },
-          field(p, 'label', { class: 'input plabel', maxlength: '20', placeholder: it.prices.length > 1 ? 'Size' : 'Size (opt.)', 'aria-label': `Price ${pi + 1} label` }),
+          field(p, 'label', { class: 'input plabel', maxlength: '40', placeholder: it.prices.length > 1 ? 'Size' : 'Size (opt.)', 'aria-label': `Price ${pi + 1} label` }),
           field(p, 'amount', { class: 'input pamount', maxlength: '16', placeholder: '12.50', inputmode: 'decimal', 'aria-label': `Price ${pi + 1}` }),
           it.prices.length > 1 ? h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove this price', text: '✕', onclick: () => { it.prices.splice(pi, 1); changed(true); } }) : null));
         items.append(h('div', { class: 'mitem' },
           h('div', { class: 'mrow' },
-            field(it, 'name', { maxlength: '60', placeholder: 'Dish name', 'aria-label': `Dish ${ii + 1} in section ${si + 1}` }),
+            field(it, 'name', { maxlength: '80', placeholder: 'Dish name', 'aria-label': `Dish ${ii + 1} in section ${si + 1}` }),
             h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Move dish up', text: '↑', onclick: () => move(sec.items, ii, -1) }),
             h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Move dish down', text: '↓', onclick: () => move(sec.items, ii, 1) }),
             h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove dish', text: '✕', onclick: () => { sec.items.splice(ii, 1); changed(true); } })),
-          field(it, 'desc', { maxlength: '160', placeholder: 'Short description (optional)', 'aria-label': 'Description' }),
+          field(it, 'desc', { maxlength: '300', placeholder: 'Short description (optional)', 'aria-label': 'Description' }),
           ...(sec.kind === 'set' ? [] : prices),
           it.extras ? extrasEditor(it, '') : null,
           h('div', { class: 'mrow' },
@@ -436,7 +436,7 @@
       });
       wrap.append(h('div', { class: 'msec' },
         h('div', { class: 'mrow msec-head' },
-          field(sec, 'name', { maxlength: '40', placeholder: 'Section, e.g. Starters', 'aria-label': `Section ${si + 1} name` }),
+          field(sec, 'name', { maxlength: '60', placeholder: 'Section, e.g. Starters', 'aria-label': `Section ${si + 1} name` }),
           h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Move section up', text: '↑', onclick: () => move(menu.sections, si, -1) }),
           h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Move section down', text: '↓', onclick: () => move(menu.sections, si, 1) }),
           h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove section', text: '✕', onclick: () => {
@@ -452,7 +452,7 @@
           field(sec, 'price', { id: `m-setp-${si}`, class: 'input pamount', maxlength: '16', placeholder: '95' })) : null,
         sec.kind === 'set' ? h('p', { class: 'mhint', text: 'Dishes in a set have no prices of their own. For a wine pairing, use "+ add-ons for the whole section" (e.g. Wine pairing 60).' }) : null,
         sec.kind === 'specials' ? h('p', { class: 'mhint', text: 'Prints in a box so it stands out. Good for happy hour, daily specials or a combo deal.' }) : null,
-        field(sec, 'note', { maxlength: '100', placeholder: sec.kind === 'set' ? 'Note, e.g. Five courses, served to the whole table' : 'Note under the section (optional), e.g. Served with rice', 'aria-label': 'Section note' }),
+        field(sec, 'note', { maxlength: '300', placeholder: sec.kind === 'set' ? 'Note, e.g. Five courses, served to the whole table' : 'Note under the section (optional), e.g. Served with rice', 'aria-label': 'Section note' }),
         items,
         h('div', { class: 'mrow' },
           h('button', { type: 'button', class: 'addbtn', text: '+ Add a dish', onclick: () => { sec.items.push(blankItem()); changed(true); } }),
@@ -472,10 +472,10 @@
     const f = menu.footer;
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Bottom of the menu (optional)' }),
-      field(f, 'address', { maxlength: '100', placeholder: 'Address', 'aria-label': 'Address' }),
-      field(f, 'phone', { maxlength: '40', placeholder: 'Phone', 'aria-label': 'Phone' }),
-      field(f, 'hours', { maxlength: '100', placeholder: 'Hours, e.g. Tue–Sun 11–9', 'aria-label': 'Hours' }),
-      field(f, 'website', { maxlength: '80', placeholder: 'Website', 'aria-label': 'Website' }),
+      field(f, 'address', { maxlength: '200', placeholder: 'Address', 'aria-label': 'Address' }),
+      field(f, 'phone', { maxlength: '80', placeholder: 'Phone', 'aria-label': 'Phone' }),
+      field(f, 'hours', { maxlength: '160', placeholder: 'Hours, e.g. Tue–Sun 11–9', 'aria-label': 'Hours' }),
+      field(f, 'website', { maxlength: '100', placeholder: 'Website', 'aria-label': 'Website' }),
       h('p', { class: 'mhint', text: 'Anything left blank is simply left off the menu.' })));
 
     const og = onlineGroup();

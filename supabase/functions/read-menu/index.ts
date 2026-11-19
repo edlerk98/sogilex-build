@@ -95,34 +95,40 @@ export const price = (v: unknown) => str(v, 16).replace(/^[$€£¥₩₹]\s*/, 
 // Turn Claude's answer into the Menus form's own data shape, within the form's limits. Also report anything cut short.
 export function toMenu(a: Any): { menu: Any; currency: string; unsure: string[]; prices: number } {
   const unsure: string[] = Array.isArray(a.unsure) ? a.unsure.map((u: unknown) => str(u, 160)).filter(Boolean).slice(0, 30) : [];
+  // Like str, but never cuts silently: anything too long for the form is flagged for the owner to check.
+  const fit = (v: unknown, max: number, what: string) => {
+    const full = str(v, 100000);
+    if (full.length > max) unsure.push(`${what} was too long and was shortened: "${full.slice(0, 40)}…". Check it against your menu.`);
+    return full.slice(0, max);
+  };
   const extras = (lead: unknown, list: unknown) => {
-    const l = (Array.isArray(list) ? list : []).map((x: Any) => ({ name: str(x?.name, 40), price: price(x?.price) })).filter((x) => x.name).slice(0, 10);
-    return l.length ? { lead: str(lead, 24), list: l } : null;
+    const l = (Array.isArray(list) ? list : []).map((x: Any) => ({ name: fit(x?.name, 60, "An add-on"), price: price(x?.price) })).filter((x) => x.name).slice(0, 10);
+    return l.length ? { lead: fit(lead, 40, "An add-on heading"), list: l } : null;
   };
   let prices = 0;
   const sections = (Array.isArray(a.sections) ? a.sections : []).slice(0, 30).map((s: Any) => {
     const kind = ["normal", "specials", "set"].includes(s?.kind) ? s.kind : "normal";
     const items = (Array.isArray(s?.items) ? s.items : []).slice(0, 80).map((it: Any) => {
-      let ps = (Array.isArray(it?.prices) ? it.prices : []).map((p: Any) => ({ label: str(p?.label, 20), amount: price(p?.amount) })).filter((p: Any) => p.amount || p.label);
+      let ps = (Array.isArray(it?.prices) ? it.prices : []).map((p: Any) => ({ label: fit(p?.label, 40, "A price label"), amount: price(p?.amount) })).filter((p: Any) => p.amount || p.label);
       if (ps.length > 4) { unsure.push(`"${str(it?.name, 40)}" has more than 4 prices; only the first 4 were kept.`); ps = ps.slice(0, 4); }
       if (kind === "set") ps = [];
       prices += ps.filter((p: Any) => p.amount).length;
       const tags = [...new Set((Array.isArray(it?.tags) ? it.tags : []).filter((t: unknown) => TAGS.includes(t as string)))];
       const ex = extras(it?.addons_lead, it?.addons);
       if (ex) prices += ex.list.filter((x) => x.price).length;
-      return { name: str(it?.name, 60), desc: str(it?.description, 160), prices: ps.length ? ps : [{ label: "", amount: "" }], tags, extras: ex };
+      return { name: fit(it?.name, 80, "A dish name"), desc: fit(it?.description, 300, `The description of "${str(it?.name, 40)}"`), prices: ps.length ? ps : [{ label: "", amount: "" }], tags, extras: ex };
     }).filter((it: Any) => it.name);
     const setPrice = kind === "set" ? price(s?.set_price) : "";
     if (setPrice) prices++;
     const ex = extras(s?.addons_lead, s?.addons);
     if (ex) prices += ex.list.filter((x) => x.price).length;
-    return { name: str(s?.name, 40), note: str(s?.note, 100), kind, price: setPrice, items, extras: ex };
+    return { name: fit(s?.name, 60, "A section name"), note: fit(s?.note, 300, `The note under "${str(s?.name, 40)}"`), kind, price: setPrice, items, extras: ex };
   }).filter((s: Any) => s.name || s.items.length);
   const f = a.footer || {};
   return {
     menu: {
-      name: str(a.restaurant_name, 60), tagline: str(a.tagline, 80), sections,
-      footer: { address: str(f.address, 100), phone: str(f.phone, 40), hours: str(f.hours, 100), website: str(f.website, 80) },
+      name: fit(a.restaurant_name, 60, "The restaurant name"), tagline: fit(a.tagline, 100, "The line under the name"), sections,
+      footer: { address: fit(f.address, 200, "The address"), phone: fit(f.phone, 80, "The phone number"), hours: fit(f.hours, 160, "The hours"), website: fit(f.website, 100, "The website") },
     },
     currency: str(a.currency, 3),
     unsure,
