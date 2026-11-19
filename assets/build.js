@@ -40,7 +40,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); loadBuilds(true); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -145,13 +145,13 @@
       const out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue });
       st.innerHTML = ''; st.append('Live at ', Object.assign(document.createElement('a'), { href: out.url, target: '_blank', rel: 'noopener', textContent: out.url }), '. It can take a minute to appear the very first time.');
       st.classList.add('ok');
-      await loadSite();
+      await loadSite(); loadBuilds(false);
     } catch (err) { st.textContent = err.message; st.classList.add('err'); refreshPublish(); }
   });
   $('pub-off').addEventListener('click', async () => {
     if (!confirm(`Take ${site.slug}.sogilex.net offline? You can publish again any time.`)) return;
     const st = $('pub-status'); st.className = 'status'; st.textContent = 'Taking it offline…';
-    try { await publishCall('/unpublish'); st.textContent = 'Your site is offline.'; st.classList.add('ok'); await loadSite(); }
+    try { await publishCall('/unpublish'); st.textContent = 'Your site is offline.'; st.classList.add('ok'); await loadSite(); loadBuilds(false); }
     catch (err) { st.textContent = err.message; st.classList.add('err'); }
   });
   $('pub-messages').addEventListener('click', async () => {
@@ -175,6 +175,52 @@
       }
     } catch { list.textContent = "Couldn't load messages. Try again in a moment."; }
   });
+
+  // ---------- your sites (every finished build is kept; reopen any of them) ----------
+  let builds = [];
+  const decode = (t) => new DOMParser().parseFromString(t || '', 'text/html').body.textContent.trim();
+  const when = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  async function loadBuilds(openLatest) {
+    try {
+      const { data, error } = await db.rpc('my_builds').abortSignal(AbortSignal.timeout(10000));
+      if (error) throw error;
+      builds = data || [];
+    } catch { return; }
+    const sel = $('ver');
+    sel.replaceChildren(...builds.map((b) => {
+      const o = document.createElement('option');
+      o.value = b.build_id;
+      o.textContent = `${decode(b.title) || 'Untitled site'} · ${when(b.created_at)}${b.live ? ' · live' : ''}`;
+      return o;
+    }));
+    $('versions').hidden = !builds.length;
+    if (lastBuildId && builds.some((b) => b.build_id === lastBuildId)) sel.value = lastBuildId;
+    // Coming back to Build: show the latest site straight away, unless a build is already on screen.
+    if (openLatest && builds.length && !html) {
+      await openBuild(builds[0].build_id);
+      const st = $('build-status'); st.className = 'status ok';
+      st.textContent = `This is your latest site, from ${when(builds[0].created_at)}. Pick another above the preview, or build a new one.`;
+    }
+  }
+  async function openBuild(id) {
+    const st = $('build-status');
+    try {
+      const { data, error } = await db.rpc('my_build', { p_build_id: id }).abortSignal(AbortSignal.timeout(15000));
+      if (error || !data) throw error || new Error('missing');
+      const b = builds.find((x) => x.build_id === id);
+      html = data; lastBuildId = id; builtOk = true;
+      siteName = decode(b && b.title).split(/\s[|·–—-]\s/)[0] || '';
+      $('addr').textContent = `${slug(siteName)}.html`;
+      $('ver').value = id;
+      paint(true); setDone(true);
+      $('pub-status').textContent = ''; $('pub-status').className = 'status';
+      refreshPublish();
+      st.className = 'status'; st.textContent = '';
+    } catch {
+      st.className = 'status err'; st.textContent = "Couldn't open that site. Check your connection and try again.";
+    }
+  }
+  $('ver').addEventListener('change', (e) => openBuild(e.target.value));
 
   // ---------- preview ----------
   let paintTimer = null;
@@ -209,6 +255,7 @@
     $('addr').textContent = `${slug(siteName)}.html`;
     html = ''; paint(true); setDone(false);
     builtOk = false; lastBuildId = null; $('pub-status').textContent = ''; $('pub-status').className = 'status'; refreshPublish();
+    $('ver').disabled = true;
     const go = $('go'); go.disabled = true; go.classList.add('working'); go.firstChild.textContent = 'Building… ';
     $('frame').closest('.preview').classList.add('building');
     st.textContent = 'Designing your site. This usually takes one to two minutes.';
@@ -266,7 +313,9 @@
       builtOk = true; refreshPublish();
       st.textContent = 'Done. Download it, or tweak the brief and build again.'; st.classList.add('ok');
     }
+    $('ver').disabled = false;
     showQuota();
+    loadBuilds(false);
   });
 
   // ---------- results ----------

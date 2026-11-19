@@ -104,6 +104,10 @@
 
     <!-- right: the preview -->
     <div class="panel preview" aria-label="Preview">
+      <div class="versions" id="versions" hidden>
+        <label for="ver">Your sites</label>
+        <select id="ver"></select>
+      </div>
       <div class="chrome">
         <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="addr" id="addr">your-site.html</span>
@@ -154,7 +158,7 @@
     <h2 id="limits-h">Privacy &amp; limits</h2>
     <ul class="notes">
       <li><b>Three free builds a day</b> per person while Sogilex Build is in beta.</li>
-      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description. We keep each finished site so you can publish it, and we record when builds happen and how long they take, to manage costs.</li>
+      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description. We keep each finished site so you can reopen and publish it, and we record when builds happen and how long they take, to manage costs.</li>
       <li><b>Publishing (beta)</b> puts your site at <code>your-name.sogilex.net</code>. Messages sent through its contact form are stored for you and shown in Build. Published sites carry a small "Made with Sogilex" footer with a link to report abuse.</li>
       <li><b>Facts stay yours to fill in.</b> Build never invents prices, phone numbers, addresses or reviews. It leaves placeholders like <code>[PHONE NUMBER]</code> for you to replace.</li>
       <li><b>No logins or look-alikes.</b> Build won't make pages that imitate real companies or collect passwords or card details.</li>
