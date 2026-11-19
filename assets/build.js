@@ -225,7 +225,7 @@
     if (openLatest && builds.length && !html) {
       await openBuild(builds[0].build_id);
       const st = $('build-status'); st.className = 'status ok';
-      st.textContent = `This is your latest site, from ${when(builds[0].created_at)}. Pick another above the preview, or build a new one.`;
+      st.textContent = `This is your latest site, from ${when(builds[0].created_at)}. To change it, type in "Change your site" above the preview. You can also pick another version there, or build a new one.`;
     }
   }
   async function openBuild(id, keepChat) {
@@ -266,6 +266,7 @@
   function renderChat() { $('chatlog').replaceChildren(); chat.forEach((m) => bubble(m.role, m.text, m.err ? 'err' : '')); }
   function refreshEdit() {
     $('editchat').hidden = !(builtOk && lastBuildId) || building;
+    document.body.classList.toggle('has-site', !!(builtOk && lastBuildId));
     const b = builds.find((x) => x.build_id === lastBuildId);
     $('undo').hidden = !(b && b.parent_id && builds.some((x) => x.build_id === b.parent_id)) || editing;
   }
@@ -441,7 +442,7 @@
     } else {
       html = clean(html); paint(true); setDone(true);
       builtOk = true; refreshPublish();
-      st.textContent = 'Done. Download it, or tweak the brief and build again.'; st.classList.add('ok');
+      st.textContent = 'Done. To change anything, type in "Change your site" above the preview.'; st.classList.add('ok');
     }
     $('ver').disabled = false;
     building = false; refreshEdit();
