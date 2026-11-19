@@ -37,3 +37,7 @@ end $$;
 revoke all on function public.site_message_email() from public, anon, authenticated;
 drop trigger if exists site_message_email on public.site_messages;
 create trigger site_message_email after insert on public.site_messages for each row execute function public.site_message_email();
+
+-- The Edge Function uses the service role; in this project new tables don't grant it anything by default.
+grant select, insert, update, delete on public.message_emails to service_role;
+grant select, update on public.site_messages to service_role;
