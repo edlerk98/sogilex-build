@@ -77,8 +77,8 @@
     if (!window.SogilexBrand) return;
     kit = await SogilexBrand.load(db, uid);
     $('logo-field').hidden = false;
-    SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); if (html) paint(true); } });
-    logoSwatches();
+    SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); renderQuick(); if (html) paint(true); } });
+    logoSwatches(); renderQuick();
     loadPhotos(uid);
   }
   function loadPhotos(uid) {
@@ -272,6 +272,7 @@
     document.body.classList.toggle('has-site', !!(builtOk && lastBuildId));
     const b = builds.find((x) => x.build_id === lastBuildId);
     $('undo').hidden = !(b && b.parent_id && builds.some((x) => x.build_id === b.parent_id)) || editing;
+    renderQuick();
   }
   function setEditBusy(on) {
     editing = on;
@@ -280,6 +281,35 @@
     $('edit-go').textContent = on ? 'Working…' : 'Make this change';
     refreshEdit();
     if (photoBox) photoBox.render();
+  }
+  // Quick changes: one-click requests sent through the same edit system (each is one edit, saved as a version).
+  const KEEP = ' Keep every word, every section, the layout and the images exactly as they are.';
+  const QUICK = [
+    ['Serif fonts', 'Change the fonts to a classic serif look: a serif for headings (for example Georgia, "Times New Roman", serif) and a very readable body font. System fonts only.' + KEEP],
+    ['Sans-serif fonts', 'Change the fonts to a clean modern sans-serif look (for example system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif) for headings and body. System fonts only.' + KEEP],
+    ['Darker look', 'Switch the colours to a dark scheme: dark backgrounds, light text, keep the accent colour (adjust its shade only if needed for contrast). Every text must keep WCAG AA contrast.' + KEEP],
+    ['Lighter look', 'Switch the colours to a light scheme: light backgrounds, dark text, keep the accent colour (adjust its shade only if needed for contrast). Every text must keep WCAG AA contrast.' + KEEP],
+    ['Bigger headline', 'Make the main headline at the top of the page noticeably bigger and bolder, and make sure it still fits on a 360px-wide phone without breaking words.' + KEEP],
+    ['More breathing room', 'Add more white space: more space between sections and around headings and paragraphs, so the page feels calmer and easier to read.' + KEEP],
+    ['Simpler', 'Make the design simpler and calmer: remove decorative effects such as gradients, shadows, glows, patterns and animations, and use at most two colours plus neutrals.' + KEEP],
+    ['Use my logo colours', null],
+  ];
+  function renderQuick() {
+    const box = $('quick-btns');
+    if (!box) return;
+    box.replaceChildren();
+    for (const [label, msg] of QUICK) {
+      let text = msg;
+      if (!text) {
+        const cs = (kit.logo && kit.colors) || [];
+        if (!cs.length) continue;
+        text = `Rebuild the colour scheme around my logo's colours: ${cs.join(', ')}. Use them for the accent, buttons and highlights; adjust shades only where needed so every text keeps WCAG AA contrast.` + KEEP;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.textContent = label; btn.disabled = editing || building;
+      btn.addEventListener('click', () => sendEdit(label, text));
+      box.append(btn);
+    }
   }
   async function showEditQuota() {
     try {
