@@ -110,6 +110,66 @@
     return n;
   }
 
+  // ---------- the online menu (https://<name>.sogilex.net/menu) ----------
+  // Closed beta like website publishing. Once it's online, every save updates it too, unless a price read from a
+  // photo is still unchecked (those never go online).
+  let online = { can_publish: false, slug: null, site_slug: null };
+  const menuUrl = (slug) => `https://${slug}.sogilex.net/menu`;
+  const slugify = (v) => (v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 32);
+  async function loadOnline() {
+    try {
+      const { data, error } = await db.rpc('my_online_menu').abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      online = data || online;
+    } catch { /* stays hidden */ }
+  }
+  function onlineSay(text, err) {
+    const el = $('m-online-status');
+    if (el) { el.textContent = text; el.classList.toggle('err', !!err); }
+  }
+  async function publishOnline(slug) {
+    if (uncheckedCount()) { onlineSay('Not updated yet: check the highlighted prices first. Prices read from a photo never go online unchecked.', true); return false; }
+    try {
+      const { data, error } = await db.rpc('publish_menu', { p_slug: slug || '', p_data: menu }).abortSignal(AbortSignal.timeout(10000));
+      if (error) throw error;
+      online.slug = data.slug;
+      onlineSay(`Up to date. Changes show online within a minute.`);
+      return true;
+    } catch (e) { onlineSay((e && e.message) || "Couldn't update the online menu. Check your connection.", true); return false; }
+  }
+  function onlineGroup() {
+    if (!online.can_publish) return null;
+    const status = h('p', { class: 'mhint mread-status', id: 'm-online-status', role: 'status', 'aria-live': 'polite' });
+    if (!online.slug) {
+      const slugIn = h('input', { class: 'input', type: 'text', value: online.site_slug || slugify(menu.name) || '', maxlength: '32', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Web address name', placeholder: 'your-restaurant' });
+      slugIn.addEventListener('input', () => { const v = slugify(slugIn.value); if (v !== slugIn.value) slugIn.value = v; });
+      return h('div', { class: 'mgroup' },
+        h('h3', { text: 'Online menu' }),
+        h('p', { class: 'mhint', text: 'Put this menu on its own web page, made for phones. It updates by itself whenever you change your menu, so your QR code always shows today\'s prices.' }),
+        h('div', { class: 'mrow' }, slugIn, h('span', { class: 'mini', text: '.sogilex.net/menu' })),
+        h('button', { type: 'button', class: 'btn mread-btn', text: 'Put my menu online', onclick: async (e) => {
+          const v = slugify(slugIn.value);
+          if (v.length < 3) { onlineSay('Choose a name of at least 3 letters or numbers.', true); return; }
+          e.target.disabled = true;
+          if (await publishOnline(v)) changed(true); else e.target.disabled = false;
+        } }),
+        status);
+    }
+    const url = menuUrl(online.slug);
+    return h('div', { class: 'mgroup' },
+      h('h3', { text: 'Online menu' }),
+      h('p', { class: 'mhint' }, 'Live at ', h('a', { href: url, target: '_blank', rel: 'noopener', class: 'qr-test', text: url.replace('https://', '') + ' ↗' }), '. It updates by itself when you change your menu.'),
+      h('div', { class: 'mrow' },
+        menu.qr.url === url ? h('span', { class: 'mini', text: '✓ Your QR code opens this menu' })
+          : h('button', { type: 'button', class: 'iconbtn', text: 'Use it for my QR code', onclick: () => { menu.qr.url = url; if (!menu.qr.label.trim()) menu.qr.label = 'Scan for our menu'; changed(true); } }),
+        h('button', { type: 'button', class: 'iconbtn danger', text: 'Take it offline', onclick: async () => {
+          if (!confirm(`Take ${url.replace('https://', '')} offline? Any QR codes already printed will stop working until you put it back online.`)) return;
+          try { const { error } = await db.rpc('unpublish_menu'); if (error) throw error; online.slug = null; changed(true); }
+          catch { onlineSay("Couldn't take it offline. Try again.", true); }
+        } })),
+      status);
+  }
+
   // ---------- read a menu from photos ----------
   const READ_URL = `${SUPABASE_URL}/functions/v1/read-menu`;
   let unsure = [];
@@ -374,6 +434,9 @@
       field(f, 'website', { maxlength: '80', placeholder: 'Website', 'aria-label': 'Website' }),
       h('p', { class: 'mhint', text: 'Anything left blank is simply left off the menu.' })));
 
+    const og = onlineGroup();
+    if (og) wrap.append(og);
+
     const q = menu.qr;
     const qrTest = h('a', { class: 'mhint qr-test', target: '_blank', rel: 'noopener' });
     const qrCheck = () => {
@@ -613,7 +676,8 @@
       const { error } = await db.from('menus').upsert({ user_id: uid, data: menu, updated_at: new Date().toISOString() }).abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
       $('save-state').textContent = 'Saved';
-    } catch { $('save-state').textContent = "Couldn't save. Check your connection."; }
+    } catch { $('save-state').textContent = "Couldn't save. Check your connection."; return; }
+    if (online.slug) publishOnline(); // keep the online menu in step
   }
   window.addEventListener('beforeunload', (e) => { if ($('save-state').textContent !== 'Saved' && uid && $('save-state').textContent) { save(); e.preventDefault(); } });
 
@@ -647,6 +711,7 @@
     }
     uid = s.user.id;
     if (window.SogilexBrand) kit = await SogilexBrand.load(db, uid);
+    await loadOnline();
     $('signout').hidden = false; $('pwbtn').hidden = false;
     try {
       const { data, error } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));

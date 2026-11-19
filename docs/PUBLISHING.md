@@ -30,6 +30,11 @@ with Sogilex sign-in).
   or data: URLs), plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).
 
+## Online menus
+`name.sogilex.net/menu` is built by the Worker from `public_menu(name)` (the owner's menu JSON, logo, logo colours),
+every piece of text escaped, served with the same CSP and footer; cached 60 s. Owners publish with `publish_menu`
+(closed beta; names shared with websites; refuses unchecked photo-read prices) and remove it with `unpublish_menu`.
+
 ## Deploying the Worker
 Cloudflare API with the "Sogilex publishing" token (saved on the Sogilex cloud environment). Upload
 `worker/sites.js` as module `sites.js` with bindings `SITES` (KV), `SUPABASE_URL`, `SUPABASE_KEY` (publishable).

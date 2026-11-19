@@ -4,6 +4,7 @@
 //                           Content-Security-Policy: no scripts, nothing loaded from elsewhere.
 //   name.sogilex.net/__form receives the site's contact form and stores it through Supabase.
 //   name.sogilex.net/photos/<id>.jpg  the owner's photos that the site uses, copied to KV when it's published.
+//   name.sogilex.net/menu              the owner's online menu, built here from their menu text (public_menu).
 //   name.sogilex.net/logo.png          the owner's logo, copied to KV when the site is published (one cached file,
 //                                      instead of a copy inside the page for every place the logo appears).
 //   api.sogilex.net         publish / unpublish, called by build.sogilex.com with the person's sign-in.
@@ -46,6 +47,7 @@ export default {
       return form(req, env, slug, url);
     }
     if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveLogo(env, slug, req.method);
+    if ((url.pathname === '/menu' || url.pathname === '/menu/') && (req.method === 'GET' || req.method === 'HEAD')) return serveMenu(env, slug, req.method);
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
     if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
@@ -53,7 +55,10 @@ export default {
     if (url.pathname !== '/' && url.pathname !== '/index.html') return Response.redirect(url.origin + '/', 302);
 
     const html = await env.SITES.get('site:' + slug);
-    if (!html) return notFound();
+    if (!html) {
+      const m = await publicMenu(env, slug);
+      return m ? Response.redirect(url.origin + '/menu', 302) : notFound();
+    }
     return new Response(req.method === 'HEAD' ? null : html, { headers: SITE_HEADERS });
   },
 };
@@ -166,7 +171,14 @@ async function copyLogo(env, slug, logo) {
   return true;
 }
 async function serveLogo(env, slug, method) {
-  const bytes = await env.SITES.get('logo:' + slug, 'arrayBuffer');
+  let bytes = await env.SITES.get('logo:' + slug, 'arrayBuffer');
+  if (!bytes) { // a name with an online menu but no website: the logo comes with the menu
+    const m = await publicMenu(env, slug);
+    const b64 = m && typeof m.logo === 'string' && (m.logo.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/) || [])[1];
+    if (b64) { const bin = atob(b64); bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); }
+    if (bytes && !(bytes[0] === 0x89 && bytes[1] === 0x50)) bytes = null;
+    if (bytes) bytes = bytes.buffer;
+  }
   if (!bytes) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
   return new Response(method === 'HEAD' ? null : bytes, {
     headers: { 'Content-Type': 'image/png', 'Content-Length': String(bytes.byteLength), 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' },
@@ -185,6 +197,117 @@ async function servePhoto(env, slug, id, method) {
       'Cross-Origin-Resource-Policy': 'same-origin',
     },
   });
+}
+
+// ---------- the online menu ----------
+// Built here from the owner's menu text (the same JSON the Menus form saves). Every piece of text is escaped, so
+// nothing the owner types can become markup. Looks follow their menu: palette, heading font, layout.
+async function publicMenu(env, slug) {
+  try {
+    const m = await rpc(env, 'public_menu', { p_slug: slug });
+    return m && m.data && Array.isArray(m.data.sections) ? m : null;
+  } catch { return null; }
+}
+const MENU_PALETTES = { // paper, ink, muted, accent (same as the Menus page)
+  cream: ['#FBF8F2', '#221C18', '#6B5D52', '#8E3B24'], paper: ['#FFFFFF', '#141414', '#5A5A5A', '#141414'],
+  sage: ['#F2F4EE', '#1E2A22', '#56645A', '#3D6B48'], harbor: ['#F4F3EF', '#18213A', '#5A6175', '#27467F'],
+  terracotta: ['#FBF2EA', '#2B1A14', '#735A4E', '#A84A28'], blush: ['#FCF3F2', '#2A1D21', '#72595F', '#A8345A'],
+  butter: ['#FBF5DF', '#2A2414', '#6B5F3E', '#8A5A00'], midnight: ['#141922', '#F2EEE6', '#ADA69A', '#E0AE4C'],
+  forest: ['#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'], charcoal: ['#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
+};
+// System fonts that keep each look's character (online pages load nothing from elsewhere).
+const MENU_FONTS = {
+  classic: ['"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif', '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif', 'uppercase', '.14em'],
+  elegant: ['Georgia, "Times New Roman", serif', 'Didot, "Bodoni 72", Georgia, serif', 'none', '.01em'],
+  modern: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'uppercase', '.12em'],
+  bold: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', '"Arial Narrow", "Helvetica Neue Condensed", Impact, sans-serif', 'uppercase', '.04em'],
+  warm: ['Georgia, "Times New Roman", serif', 'Georgia, "Times New Roman", serif', 'none', '0'],
+};
+const MENU_TAGS = { V: 'vegetarian', VG: 'vegan', GF: 'gluten-free', SP: 'spicy', N: 'contains nuts' };
+function darkenForLight(hex) {
+  let [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (x) => { const v = x / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const L = () => 0.2126 * lum(r) + 0.7152 * lum(g) + 0.0722 * lum(b);
+  for (let i = 0; i < 20 && 0.99 / (L() + 0.05) < 4.5; i++) { r = Math.round(r * 0.85); g = Math.round(g * 0.85); b = Math.round(b * 0.85); }
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+const txt = (v, max) => esc(String(v == null ? '' : v).slice(0, max || 400).trim());
+function menuPage(m) {
+  const d = m.data;
+  const colors = Array.isArray(m.colors) ? m.colors.filter((c) => /^#[0-9a-fA-F]{6}$/.test(c)) : [];
+  const pal = d.palette === 'logo' && colors[0] ? ['#FBF8F2', '#221C18', '#6B5D52', darkenForLight(colors[0])] : (MENU_PALETTES[d.palette] || MENU_PALETTES.cream);
+  const [body, head, tf, ls] = MENU_FONTS[d.font] || MENU_FONTS.classic;
+  const center = d.layout !== 'left' && d.layout !== 'leaders';
+  const cur = d.showCurrency !== false && typeof d.currency === 'string' ? d.currency.slice(0, 3) : '';
+  const price = (a) => { a = String(a || '').trim().slice(0, 16); return a ? (cur && /^\d/.test(a) ? esc(cur) + esc(a) : esc(a)) : ''; };
+  const extras = (ex) => {
+    if (!ex || !Array.isArray(ex.list)) return '';
+    const list = ex.list.filter((x) => x && String(x.name || '').trim()).slice(0, 10);
+    if (!list.length) return '';
+    return `<p class="x">${ex.lead && String(ex.lead).trim() ? `<em>${txt(ex.lead, 24)}</em> ` : ''}${list.map((x) => txt(x.name, 40) + (String(x.price || '').trim() ? ` <span class="xp">${price(x.price)}</span>` : '')).join(' · ')}</p>`;
+  };
+  const used = new Set();
+  const sections = (d.sections || []).slice(0, 40).map((s) => {
+    if (!s) return '';
+    const set = s.kind === 'set';
+    const items = (Array.isArray(s.items) ? s.items : []).filter((it) => it && String(it.name || '').trim()).slice(0, 120).map((it) => {
+      const tags = (Array.isArray(it.tags) ? it.tags : []).filter((t) => MENU_TAGS[t]);
+      tags.forEach((t) => used.add(t));
+      const ps = set ? [] : (Array.isArray(it.prices) ? it.prices : []).filter((p) => p && String(p.amount || '').trim()).slice(0, 4);
+      const pr = ps.map((p) => `${String(p.label || '').trim() ? `<small>${txt(p.label, 20)}</small> ` : ''}${price(p.amount)}`).join(' <span class="dot">·</span> ');
+      return `<li class="it"><div class="row"><span class="nm">${txt(it.name, 60)}${tags.length ? ` <span class="tg">${tags.join(' · ')}</span>` : ''}</span>${pr ? `<span class="lead" aria-hidden="true"></span><span class="pr">${pr}</span>` : ''}</div>${String(it.desc || '').trim() ? `<p class="ds">${txt(it.desc, 160)}</p>` : ''}${extras(it.extras)}</li>`;
+    }).join('');
+    const name = String(s.name || '').trim();
+    if (!items && !name) return '';
+    const sp = set && String(s.price || '').trim() ? `<span class="pr">${price(s.price)}</span>` : '';
+    return `<section class="sec${s.kind === 'specials' ? ' specials' : ''}${set ? ' set' : ''}">${name || sp ? `<h2><span>${txt(name, 40)}</span>${sp}</h2>` : ''}${String(s.note || '').trim() ? `<p class="nt">${txt(s.note, 100)}</p>` : ''}${items ? `<ul>${items}</ul>` : ''}${extras(s.extras)}</section>`;
+  }).join('');
+  const f = d.footer || {};
+  const contact = [f.address, f.phone].map((x) => txt(x, 100)).filter(Boolean).join(' · ');
+  const legend = Object.keys(MENU_TAGS).filter((k) => used.has(k)).map((k) => `${k} ${MENU_TAGS[k]}`).join(' · ');
+  const title = txt(d.name, 60) || 'Menu';
+  const logo = m.logo && d.showLogo !== false ? '<img class="logo" src="sogilex:logo" alt="' + title + ' logo">' : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} · Menu</title><meta name="description" content="${title} menu${d.tagline ? ': ' + txt(d.tagline, 80) : ''}"><meta name="theme-color" content="${pal[0]}">
+<style>
+:root{--bg:${pal[0]};--ink:${pal[1]};--mu:${pal[2]};--ac:${pal[3]};--rule:color-mix(in srgb,var(--mu) 40%,var(--bg))}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 ${body}}
+main{max-width:680px;margin:0 auto;padding:32px 20px 40px}
+header{text-align:${center ? 'center' : 'left'};margin-bottom:28px}
+.logo{display:block;max-height:72px;max-width:60%;width:auto;margin:${center ? '0 auto 14px' : '0 0 14px'}}
+h1{margin:0;font:600 clamp(28px,8vw,40px)/1.1 ${head};text-transform:${tf};letter-spacing:${ls};overflow-wrap:anywhere}
+.tl{margin:6px 0 0;color:var(--mu);font-style:italic}
+.sec{margin:0 0 30px}
+h2{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--rule);color:var(--ac);font:600 15px/1.2 ${head};text-transform:uppercase;letter-spacing:.16em}
+.nt{margin:-4px 0 10px;color:var(--mu);font-style:italic;font-size:15px}
+ul{list-style:none;margin:0;padding:0}
+.it{padding:9px 0;border-bottom:1px dotted var(--rule)}
+.it:last-child{border-bottom:0}
+.row{display:flex;align-items:baseline;gap:8px}
+.nm{font-weight:600;overflow-wrap:anywhere}
+.tg{font-weight:400;font-size:11px;letter-spacing:.08em;color:var(--mu);white-space:nowrap}
+.lead{flex:1;${d.layout === 'leaders' ? 'border-bottom:1.5px dotted var(--rule);transform:translateY(-.3em);' : ''}min-width:10px}
+.pr{white-space:nowrap;font-variant-numeric:tabular-nums}.pr small{color:var(--mu);font-size:.8em}.dot{color:var(--mu)}
+.ds{margin:2px 0 0;color:var(--mu);font-size:15px;font-style:italic}
+.x{margin:4px 0 0;font-size:14px;color:var(--mu)}.x em{color:var(--ink)}
+.specials{border:1.5px solid var(--ac);border-radius:10px;padding:14px 16px 6px}
+.specials h2{border:0;justify-content:center;padding:0}
+.set .it .row{justify-content:flex-start}
+footer.mf{text-align:center;color:var(--mu);font-size:14px;border-top:1px solid var(--rule);padding-top:16px}
+footer.mf p{margin:3px 0}
+a{color:var(--ac)}
+</style></head><body><main>
+<header>${logo}<h1>${title}</h1>${d.showTagline !== false && String(d.tagline || '').trim() ? `<p class="tl">${txt(d.tagline, 80)}</p>` : ''}</header>
+${sections || '<p>This menu is being updated. Please check back soon.</p>'}
+${legend || contact || String(f.hours || '').trim() ? `<footer class="mf">${legend ? `<p>${legend}</p>` : ''}${String(f.hours || '').trim() ? `<p>${txt(f.hours, 100)}</p>` : ''}${contact ? `<p>${contact}</p>` : ''}</footer>` : ''}
+</main></body></html>`;
+}
+async function serveMenu(env, slug, method) {
+  const m = await publicMenu(env, slug);
+  if (!m) return notFound();
+  const html = await prepare(menuPage(m), slug, !!m.logo && m.data.showLogo !== false);
+  return new Response(method === 'HEAD' ? null : html, { headers: { ...SITE_HEADERS, 'Cache-Control': 'public, max-age=60' } });
 }
 
 // ---------- making a generated page safe to host ----------

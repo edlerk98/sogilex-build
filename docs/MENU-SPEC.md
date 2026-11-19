@@ -83,6 +83,13 @@ details (fills blanks only). Unreadable bits become "[?]" and are listed. Every 
 owner clicks it (or confirms "I've checked every price"); printing warns while any are unchecked. Limits: 10 imports
 a day (failed ones don't count), 200/day overall (`010_menu_import.sql`). Live test on a tilted photo of a 24-price
 bar menu: all prices exact, tags right, 23 s, ~7 cents; an ambiguous section was flagged, not guessed.
+**1d (done 2026-11-19): online menu.** "Online menu" box in the Menus form (closed beta: `can_publish`): choose a
+name (defaults to the website's) and the menu goes live at https://<name>.sogilex.net/menu (a name with no website
+also redirects / to /menu). Table `online_menus` holds a copy of the menu JSON; every save republishes it, except
+while any price read from a photo is unchecked (`publish_menu` refuses data containing "chk"). The Worker builds the
+phone page from the JSON itself (all text escaped; palette and layout follow the menu; system fonts), adds the
+Sogilex footer, serves the logo as /logo.png, caches 60 s. "Use it for my QR code" points the printed QR at it.
+SQL `011_online_menus.sql` (also makes `publish_site` respect names used by someone else's online menu).
 QR code: optional web address + line ("Scan to order online"), printed dark-on-white on the last page (0.9 in),
 generated in the browser (`assets/vendor/qrcode.js`, MIT); https:// added if missing; non-addresses print nothing.
 
