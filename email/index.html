@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sogilex · website message emails</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#120A18">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/unbounded-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/build.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="sunset" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D91E8C"/><stop offset="0.55" stop-color="#F2496B"/><stop offset="1" stop-color="#FF9A4D"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 124 102"><rect x="0" y="50" width="64" height="52" rx="11" fill="url(#sunset)"/><rect x="60" y="0" width="64" height="52" rx="11" fill="url(#sunset)"/></symbol>
+  </defs>
+</svg>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<header class="top">
+  <div class="wrap row">
+    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home"><svg width="32" height="26" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">SOGILEX</span></a>
+  </div>
+</header>
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-h">
+    <p class="eyebrow">Website message emails</p>
+    <h1 id="hero-h">Loading…</h1>
+    <div class="panel" style="padding:20px;max-width:560px;display:flex;flex-direction:column;gap:14px" data-horizon>
+      <p class="lede" id="what" style="margin:0"></p>
+      <div><button class="btn" type="button" id="act" hidden></button></div>
+      <p class="status" id="st" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+<script>
+(() => {
+  const URL_ = 'https://sdltqbctuieyjlujsdhj.supabase.co/functions/v1/message-email';
+  const q = new URLSearchParams(location.search);
+  const confirmTok = q.get('confirm'); const stopTok = q.get('stop');
+  const $ = (id) => document.getElementById(id);
+  const h1 = $('hero-h'), what = $('what'), btn = $('act'), st = $('st');
+  // The action needs a button press, so link scanners in mail apps can't confirm or stop anything by themselves.
+  if (confirmTok) {
+    h1.textContent = 'Get website messages here?';
+    what.textContent = 'Press the button to start getting messages from a Sogilex website\'s contact form at this email address. If you weren\'t expecting this, just close this page.';
+    btn.textContent = 'Yes, send them to me';
+  } else if (stopTok) {
+    h1.textContent = 'Stop these emails?';
+    what.textContent = 'Press the button and this address stops getting website messages. They still show up for the site owner in Sogilex Build.';
+    btn.textContent = 'Stop the emails';
+  } else { h1.textContent = 'Nothing to do here'; what.textContent = 'This page is for the links in Sogilex message emails.'; return; }
+  btn.hidden = false;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; st.className = 'status'; st.textContent = 'One moment…';
+    try {
+      const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(confirmTok ? { action: 'confirm', token: confirmTok } : { action: 'stop', token: stopTok }) });
+      let d = {}; try { d = await res.json(); } catch {}
+      if (!res.ok) throw new Error(d.error || 'Something went wrong. Try again.');
+      btn.hidden = true; st.classList.add('ok');
+      st.textContent = confirmTok ? `Confirmed. New messages will be emailed to ${d.email}.` : (d.email ? `Done. ${d.email} won't get these emails any more.` : 'Done. These emails are already stopped.');
+    } catch (e) { st.classList.add('err'); st.textContent = e.message; btn.disabled = false; }
+  });
+})();
+</script>
+<script src="../assets/scene.js" defer></script>
+</body>
+</html>

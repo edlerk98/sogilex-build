@@ -50,7 +50,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); loadBuilds(true); showEditQuota(); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadMail(); loadKit(s.user.id); loadBuilds(true); showEditQuota(); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -179,6 +179,44 @@
     const st = $('pub-status'); st.className = 'status'; st.textContent = 'Taking it offline…';
     try { await publishCall('/unpublish'); st.textContent = 'Your site is offline.'; st.classList.add('ok'); await loadSite(); loadBuilds(false); }
     catch (err) { st.textContent = err.message; st.classList.add('err'); }
+  });
+  // ---------- email new messages to the owner (Edge Function message-email) ----------
+  const MAIL_URL = `${SUPABASE_URL}/functions/v1/message-email`;
+  function mailSay(text, cls) { const el = $('mail-state'); el.textContent = text; el.className = 'hint-line' + (cls ? ' ' + cls : ''); }
+  async function loadMail() {
+    try {
+      const { data, error } = await db.from('message_emails').select('email, confirmed_at').maybeSingle().abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      if (data) {
+        $('mail-to').value = data.email;
+        if (data.confirmed_at) mailSay(`New messages are emailed to ${data.email}. Clear the box and save to stop.`, 'ok');
+        else mailSay(`Waiting for ${data.email} to confirm. Open the email we sent there (check spam too) and press Confirm.`);
+      } else {
+        const s = await session();
+        if (s && s.user && s.user.email && !$('mail-to').value) $('mail-to').value = s.user.email;
+      }
+    } catch { /* keeps the default hint */ }
+  }
+  $('mail-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('mail-to').value.trim();
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { mailSay("That doesn't look like an email address.", 'err'); $('mail-to').focus(); return; }
+    $('mail-go').disabled = true; mailSay('Saving…');
+    try {
+      const s = await session();
+      if (!s) throw new Error('Your sign-in has expired. Sign in again.');
+      const res = await fetch(MAIL_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${s.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set', email }), signal: AbortSignal.timeout(20000),
+      });
+      let data = {}; try { data = await res.json(); } catch { /* not JSON */ }
+      if (!res.ok) throw new Error(data.error || `Couldn't save that (${res.status}).`);
+      if (!data.email) mailSay('Turned off. Messages still show up here in Build.', 'ok');
+      else if (data.confirmed) mailSay(`Done. New messages are emailed to ${data.email}.`, 'ok');
+      else mailSay(`Almost done: we sent a confirmation email to ${data.email}. Open it (check spam too) and press Confirm. Until then, messages only show up here.`);
+    } catch (err) { mailSay(err.message || "Couldn't save that. Try again.", 'err'); }
+    finally { $('mail-go').disabled = false; }
   });
   $('pub-messages').addEventListener('click', async () => {
     const list = $('msg-list'); list.textContent = 'Loading…';

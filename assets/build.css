@@ -166,6 +166,9 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .pub-form label { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
 .pub-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .pub-row .input { flex: 1 1 180px; width: auto; }
+.mail-form { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mail-form .hint-line.ok { color: var(--lime); }
+.mail-form .hint-line.err { color: var(--warn); }
 .pub-suffix { font-family: var(--mono); font-size: 14px; color: var(--mute); }
 .hint-line { margin: 0; font-size: 13px; color: var(--mute); }
 .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--magenta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 32px; }
