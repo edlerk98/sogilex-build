@@ -22,6 +22,7 @@
     v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', pages: 1, showLogo: true,
     font: 'classic', palette: 'cream', layout: 'centered', border: 'none',
     sections: [blankSection()], footer: { address: '', phone: '', hours: '', website: '' },
+    qr: { url: '', label: '' },
   });
 
   // Curated looks: every combination is designed to work, and every palette passes WCAG AA (checked).
@@ -64,6 +65,7 @@
   function normalize(m) {
     const ex = (e) => (e && Array.isArray(e.list) ? { lead: String(e.lead || ''), list: e.list.map((x) => ({ name: String(x.name || ''), price: String(x.price || '') })) } : null);
     m.pages = m.pages === 2 ? 2 : 1;
+    m.qr = { url: String((m.qr && m.qr.url) || ''), label: String((m.qr && m.qr.label) || '') };
     m.sections = (m.sections || []).map((sec) => ({
       name: '', note: '', price: '', ...sec,
       kind: KINDS.some(([k]) => k === sec.kind) ? sec.kind : 'normal',
@@ -98,7 +100,127 @@
   }
   // A text input bound to obj[key]: typing updates the menu without rebuilding the form (so focus stays put).
   function field(obj, key, attrs) {
-    return h('input', { class: 'input', type: 'text', value: obj[key] || '', ...attrs, oninput: (e) => { obj[key] = e.target.value; changed(); } });
+    const n = h('input', { class: 'input', type: 'text', value: obj[key] || '', ...attrs, oninput: (e) => { obj[key] = e.target.value; changed(); } });
+    // A price read from a photo stays highlighted until the owner has looked at it (clicked or tabbed into it).
+    if (obj.chk && (key === 'amount' || key === 'price')) {
+      n.classList.add('unchecked');
+      n.title = 'Read from your photo: check it against your menu';
+      n.addEventListener('focus', () => { delete obj.chk; n.classList.remove('unchecked'); n.removeAttribute('title'); changed(); updateCheck(); }, { once: true });
+    }
+    return n;
+  }
+
+  // ---------- read a menu from photos ----------
+  const READ_URL = `${SUPABASE_URL}/functions/v1/read-menu`;
+  let unsure = [];
+  // Every price-holding object (item price, add-on, set price), for counting and clearing the "check me" marks.
+  function priceHolders() {
+    const out = [];
+    for (const sec of menu.sections) {
+      if (sec.kind === 'set') out.push(sec);
+      if (sec.extras) out.push(...sec.extras.list);
+      for (const it of sec.items) { out.push(...it.prices); if (it.extras) out.push(...it.extras.list); }
+    }
+    return out;
+  }
+  const uncheckedCount = () => priceHolders().filter((o) => o.chk).length;
+  function checkBanner() {
+    const n = uncheckedCount();
+    if (!n && !unsure.length) return null;
+    return h('div', { class: 'mcheck', id: 'm-check', role: 'status' },
+      n ? h('p', {}, h('strong', { text: `Check ${n} ${n === 1 ? 'price' : 'prices'} against your menu.` }), ' They were read from your photo and are highlighted below. Click each one to mark it checked.') : null,
+      unsure.length ? h('p', {}, h('strong', { text: "Couldn't read clearly: " }), unsure.join(' · ')) : null,
+      h('div', { class: 'mrow' },
+        n ? h('button', { type: 'button', class: 'iconbtn', text: "I've checked every price", onclick: () => {
+          if (!confirm(`Mark all ${n} prices as checked? Only do this once you've compared each one with your menu.`)) return;
+          priceHolders().forEach((o) => { delete o.chk; }); changed(true);
+        } }) : null,
+        unsure.length ? h('button', { type: 'button', class: 'iconbtn', text: 'Hide this note', onclick: () => { unsure = []; changed(true); } }) : null));
+  }
+  function updateCheck() {
+    const old = $('m-check'); const next = checkBanner();
+    if (old && next) old.replaceWith(next); else if (old) old.remove();
+  }
+  // Photos are redrawn at most 2000 px as JPEG (sharp enough to read, small enough to send); PDFs go as they are.
+  async function fileForReading(file) {
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} is over 8 MB. Try a smaller PDF, or photos of each page.`);
+      const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
+      return { type: 'application/pdf', data };
+    }
+    if (!/^image\//.test(file.type) && !/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) throw new Error(`${file.name} isn't a photo or a PDF.`);
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image(); img.src = url;
+      try { await img.decode(); } catch { throw new Error(`${file.name} couldn't be opened here. Try saving it as a JPG.`); }
+      const scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+      return { type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.85).split(',')[1] };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  let reading = false;
+  async function readFromPhotos(files, statusEl, btn) {
+    if (reading || !files.length) return;
+    files = files.slice(0, 4);
+    const hasDishes = menu.sections.some((sec) => sec.items.some((it) => it.name.trim()));
+    if (hasDishes && !confirm('Replace the dishes on your menu with the ones read from your photos? Your look, logo and paper stay the same.')) return;
+    const say = (t, err) => { statusEl.textContent = t; statusEl.classList.toggle('err', !!err); };
+    reading = true; btn.disabled = true; btn.textContent = 'Reading your menu…';
+    try {
+      const payload = [];
+      for (const f of files) payload.push(await fileForReading(f));
+      const s = await session();
+      if (!s) throw new Error('Your sign-in expired. Reload the page and sign in again.');
+      say(`Reading ${files.length === 1 ? 'your menu' : `${files.length} pages`}. This usually takes 20 to 60 seconds.`);
+      const res = await fetch(READ_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ files: payload }),
+      });
+      if (!res.ok || !res.body) {
+        let m = `Reading the menu didn't work (${res.status}).`;
+        try { const j = await res.json(); if (j.error) m = j.error; } catch { /* not JSON */ }
+        throw new Error(m);
+      }
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; let result = null; let failed = null;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const ln = buf.slice(0, nl); buf = buf.slice(nl + 1);
+          if (!ln.trim()) continue;
+          const m = JSON.parse(ln);
+          if (m.t === 'done') result = m; else if (m.t === 'error') failed = m.message;
+        }
+      }
+      if (failed) throw new Error(failed);
+      if (!result) throw new Error('The connection dropped before the menu was read. Please try again.');
+      applyRead(result);
+      say(`Read ${result.menu.sections.reduce((n, sec) => n + sec.items.length, 0)} dishes in ${result.menu.sections.length} sections. Check the highlighted prices below.`);
+    } catch (e) {
+      say((e && e.message) || 'Something went wrong. Please try again.', true);
+    } finally {
+      reading = false; btn.disabled = false; btn.textContent = 'Read it from a photo';
+    }
+  }
+  function applyRead(r) {
+    const m = r.menu;
+    // Fill only what's blank: the owner's own name, line and contact details are never overwritten.
+    if (!menu.name.trim() && m.name) menu.name = m.name;
+    if (!menu.tagline.trim() && m.tagline) menu.tagline = m.tagline;
+    for (const k of ['address', 'phone', 'hours', 'website']) if (!(menu.footer[k] || '').trim() && m.footer[k]) menu.footer[k] = m.footer[k];
+    if (r.currency) { menu.currency = r.currency; menu.showCurrency = true; }
+    menu.sections = m.sections;
+    normalize(menu);
+    priceHolders().forEach((o) => { if ((o.amount !== undefined ? o.amount : o.price || '').trim()) o.chk = true; });
+    unsure = r.unsure || [];
+    const items = menu.sections.reduce((n, sec) => n + sec.items.length, 0);
+    if (menu.pages === 1 && items > 30) menu.pages = 2;
+    changed(true);
   }
   // Add-ons for a dish or a whole section: a lead word ("Add", "Choice of") and names with optional prices.
   function extrasEditor(owner, startLabel) {
@@ -133,6 +255,17 @@
     const root = $('fields');
     root.replaceChildren();
     const wrap = h('div', { class: 'mfields' });
+
+    const banner = checkBanner();
+    if (banner) wrap.append(banner);
+    const readInput = h('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, hidden: true });
+    const readStatus = h('p', { class: 'mhint mread-status', role: 'status', 'aria-live': 'polite' });
+    const readBtn = h('button', { type: 'button', class: 'btn mread-btn', text: reading ? 'Reading your menu…' : 'Read it from a photo', disabled: reading ? true : null, onclick: () => readInput.click() });
+    readInput.addEventListener('change', () => { const f = [...readInput.files]; readInput.value = ''; readFromPhotos(f, readStatus, readBtn); });
+    wrap.append(h('div', { class: 'mgroup mread' },
+      h('h3', { text: 'Already have a menu?' }),
+      h('p', { class: 'mhint', text: 'Take a photo of it (up to 4 pages, or a PDF) and Sogilex fills in your dishes, prices and details. You check every price before printing. Photos aren\'t kept.' }),
+      readBtn, readInput, readStatus));
 
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Start from a type of restaurant' }),
@@ -241,6 +374,23 @@
       field(f, 'website', { maxlength: '80', placeholder: 'Website', 'aria-label': 'Website' }),
       h('p', { class: 'mhint', text: 'Anything left blank is simply left off the menu.' })));
 
+    const q = menu.qr;
+    const qrTest = h('a', { class: 'mhint qr-test', target: '_blank', rel: 'noopener' });
+    const qrCheck = () => {
+      const u = qrUrl(q.url);
+      qrTest.hidden = !u;
+      if (u) { qrTest.href = u; qrTest.textContent = `Test it: ${u} ↗`; }
+    };
+    const qrInput = field(q, 'url', { maxlength: '200', placeholder: 'Web address, e.g. yourrestaurant.com/order', 'aria-label': 'QR code web address', inputmode: 'url', autocomplete: 'off', spellcheck: 'false' });
+    qrInput.addEventListener('input', qrCheck);
+    wrap.append(h('div', { class: 'mgroup' },
+      h('h3', { text: 'QR code (optional)' }),
+      h('p', { class: 'mhint', text: 'Prints a code at the bottom of your menu that opens a web page when a phone camera points at it: your website, online ordering, reviews or Instagram.' }),
+      qrInput,
+      field(q, 'label', { maxlength: '40', placeholder: 'Line next to it, e.g. Scan to order online', 'aria-label': 'Line next to the QR code' }),
+      qrTest));
+    qrCheck();
+
     root.append(wrap);
   }
 
@@ -249,6 +399,31 @@
     const a = (amount || '').trim();
     if (!a) return '';
     return menu.showCurrency && menu.currency && /^\d/.test(a) ? menu.currency + a : a;
+  }
+  // A QR code needs a full web address. Add https:// if it's missing; refuse anything that isn't a web link.
+  function qrUrl(raw) {
+    let u = (raw || '').trim();
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try { const x = new URL(u); return /\./.test(x.hostname) && !/\s/.test(u) ? x.href : ''; } catch { return ''; }
+  }
+  // The QR code as an SVG: dark squares on a white tile, whatever the menu's colours (light-on-dark codes scan badly).
+  function qrSvg(url) {
+    if (!window.qrcode) return null;
+    const qr = window.qrcode(0, 'M');
+    qr.addData(url); qr.make();
+    const n = qr.getModuleCount(); const q = 2;
+    let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + q} ${r + q}h1v1h-1z`;
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${n + q * 2} ${n + q * 2}`);
+    svg.setAttribute('class', 'm-qr-code'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', `QR code for ${url}`);
+    svg.setAttribute('shape-rendering', 'crispEdges');
+    const bg = document.createElementNS(NS, 'rect'); bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%'); bg.setAttribute('fill', '#ffffff');
+    const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); path.setAttribute('fill', '#111111');
+    svg.append(bg, path);
+    return svg;
   }
   function extrasEl(ex) {
     if (!ex) return null;
@@ -330,11 +505,15 @@
       }
       const body = h('div', { class: 'm-body' });
       page.append(body);
-      if (i === n - 1 && (contact || (f.hours || '').trim() || legend)) {
-        page.append(h('footer', { class: 'm-foot' },
-          legend ? h('p', { text: legend }) : null,
-          (f.hours || '').trim() ? h('p', { text: f.hours.trim() }) : null,
-          contact ? h('p', { text: contact }) : null));
+      const qu = qrUrl(menu.qr && menu.qr.url);
+      const qrEl = i === n - 1 && qu ? h('div', { class: 'm-qr' }, qrSvg(qu), (menu.qr.label || '').trim() ? h('span', { class: 'm-qr-label', text: menu.qr.label.trim() }) : null) : null;
+      if (i === n - 1 && (contact || (f.hours || '').trim() || legend || qrEl)) {
+        page.append(h('footer', { class: 'm-foot' + (qrEl ? ' has-qr' : '') },
+          qrEl,
+          h('div', { class: 'm-foot-text' },
+            legend ? h('p', { text: legend }) : null,
+            (f.hours || '').trim() ? h('p', { text: f.hours.trim() }) : null,
+            contact ? h('p', { text: contact }) : null)));
       }
       pages.push({ page, body });
     }
@@ -442,6 +621,8 @@
   $('paper').addEventListener('change', (e) => { menu.paper = e.target.value === 'a4' ? 'a4' : 'letter'; changed(); });
   $('pages').addEventListener('change', (e) => { menu.pages = e.target.value === '2' ? 2 : 1; changed(); });
   $('print').addEventListener('click', () => {
+    const n = uncheckedCount();
+    if (n && !confirm(`${n} ${n === 1 ? 'price was' : 'prices were'} read from your photo and not checked yet (highlighted in the form). Print anyway?`)) return;
     // Print a copy of the preview, which has already been fitted to the page (a hidden copy can't measure itself).
     renderPreview();
     const copies = [...$('sheets').children].map((pg) => pg.cloneNode(true));

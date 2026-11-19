@@ -164,3 +164,22 @@ nav a[aria-current="page"] { color: var(--text); }
 @media (max-width: 900px) {
   .menu-studio { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* read a menu from photos */
+.mread-btn { align-self: flex-start; min-height: 44px; font-size: 15px; }
+.mread-btn:disabled { opacity: .7; cursor: progress; }
+.mread-status:empty { display: none; }
+.mread-status.err { color: var(--warn); }
+.mcheck { border: 1px solid #F2C14E; background: rgba(242, 193, 78, .1); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.mcheck p { margin: 0; }
+.input.unchecked { border-color: #F2C14E; box-shadow: 0 0 0 2px rgba(242, 193, 78, .35); background: rgba(242, 193, 78, .1); }
+
+/* QR code on the printed menu: a white tile so it scans on any colour; about 0.9 in, big enough for any phone */
+.m-foot.has-qr { display: flex; align-items: center; justify-content: center; gap: calc(14pt * var(--s)); text-align: left; }
+.layout-left .m-foot.has-qr { justify-content: flex-start; }
+.m-qr { display: flex; align-items: center; gap: 8pt; flex: none; }
+.m-qr-code { width: 0.9in; height: 0.9in; display: block; border-radius: 3pt; }
+.m-qr-label { max-width: 1.4in; font-size: .95em; color: var(--m-ink); font-weight: 600; line-height: 1.25; }
+.m-foot.has-qr .m-foot-text { min-width: 0; }
+.qr-test { word-break: break-all; color: var(--lime); }
+.qr-test[hidden] { display: none; }

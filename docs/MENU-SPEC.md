@@ -75,6 +75,17 @@ Photos, multiple languages, tri-folds and table tents, QR codes, online ordering
 
 ## Milestones
 
+**1c (done 2026-11-19): read a menu from photos + QR code.** "Already have a menu? Read it from a photo": up to
+4 photos (redrawn ≤2000 px JPEG) or a PDF go to the `read-menu` Edge Function (Opus 5.5, structured JSON, effort
+medium, not stored); it copies sections, dishes, descriptions, prices exactly as printed (leading currency symbol
+moved to the currency setting), sizes, add-ons, specials/set kinds, dietary tags only where printed, and contact
+details (fills blanks only). Unreadable bits become "[?]" and are listed. Every price read is highlighted until the
+owner clicks it (or confirms "I've checked every price"); printing warns while any are unchecked. Limits: 10 imports
+a day (failed ones don't count), 200/day overall (`010_menu_import.sql`). Live test on a tilted photo of a 24-price
+bar menu: all prices exact, tags right, 23 s, ~7 cents; an ambiguous section was flagged, not guessed.
+QR code: optional web address + line ("Scan to order online"), printed dark-on-white on the last page (0.9 in),
+generated in the browser (`assets/vendor/qrcode.js`, MIT); https:// added if missing; non-addresses print nothing.
+
 **1b (done 2026-11-19): structure for different kinds of restaurant.** One page or front and back (the menu
 flows onto page 2; a section that breaks is headed "Name, continued"); add-ons per dish or per section with a lead
 word ("Add bacon +2", "Choice of fries or salad"); section kinds: regular, specials box, set price (prix fixe /
