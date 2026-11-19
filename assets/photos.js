@@ -120,7 +120,7 @@ window.SogilexPhotos = (() => {
   }
 
   // The "Your photos" box. onChange(photos) runs whenever the list changes.
-  function mount(root, { db, uid, onChange }) {
+  function mount(root, { db, uid, onChange, onAdded }) {
     let photos = [];
     let map = {};
     const grid = h('div', { class: 'photo-grid' });
@@ -134,7 +134,7 @@ window.SogilexPhotos = (() => {
     ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
     drop.addEventListener('drop', (e) => { e.preventDefault(); add([...(e.dataTransfer.files || [])]); });
     root.replaceChildren(drop, input, count, grid, status,
-      h('p', { class: 'photo-hint', text: 'Give each photo a short name (for example "Beach wedding"). Build uses your photos when it designs a new site, and you can ask for them in "Change your site". Photos stay private until you publish a site that uses them.' }));
+      h('p', { class: 'photo-hint', text: 'Give each photo a short name (for example "Beach wedding"). Build uses your photos when it designs a new site. To put new photos on a site you already made, use "Change your site". Photos stay private until you publish a site that uses them.' }));
 
     function setStatus(text, err) { status.textContent = text; status.classList.toggle('err', !!err); }
     function render() {
@@ -173,16 +173,18 @@ window.SogilexPhotos = (() => {
       const todo = files.slice(0, room);
       const problems = [];
       let done = 0;
+      const added = [];
       drop.disabled = true;
       for (const f of todo) {
         setStatus(`Adding photo ${done + 1} of ${todo.length}…`);
-        try { await addOne(db, uid, f); done++; } catch (e) { problems.push(e.message); }
+        try { added.push(await addOne(db, uid, f)); done++; } catch (e) { problems.push(e.message); }
       }
       drop.disabled = false;
       await refresh();
       const skipped = files.length - todo.length;
       const msg = [done ? `Added ${done} ${done === 1 ? 'photo' : 'photos'}.` : '', ...problems, skipped ? `${skipped} skipped: you can keep up to ${MAX_PHOTOS}.` : ''].filter(Boolean).join(' ');
       setStatus(msg, problems.length > 0 || skipped > 0);
+      if (added.length && onAdded) onAdded(added);
     }
     async function remove(p) {
       if (!confirm(`Remove ${p.name ? `"${p.name}"` : 'this photo'}? Sites that use it will show an empty space there until you change them. A site that's already live keeps it until you publish again.`)) return;

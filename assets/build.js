@@ -87,6 +87,7 @@
     photoBox = SogilexPhotos.mount($('photos-mount'), {
       db, uid,
       onChange: (photos) => { $('use-photos-row').hidden = !photos.length; if (html) paint(true); },
+      onAdded: (added) => offerNewPhotos(added),
     });
     // Preview links last an hour: renew them before they run out.
     setInterval(() => { if (photoBox) photoBox.refresh(true); }, 40 * 60 * 1000);
@@ -289,15 +290,41 @@
     // Enter sends; Shift+Enter makes a new line.
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('edit-form').requestSubmit(); }
   });
-  $('edit-form').addEventListener('submit', async (e) => {
+  $('edit-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    if (editing || building || !lastBuildId) return;
     const msg = $('edit-msg').value.trim();
     if (msg.length < 2) { $('edit-msg').focus(); return; }
+    sendEdit(msg, msg);
+  });
+  // Photos added while a site is open: offer to put them on the site with one click.
+  function offerNewPhotos(added) {
+    if (!(builtOk && lastBuildId) || building) return;
+    const names = added.map((p) => (p.name || '').trim()).filter(Boolean);
+    const n = added.length;
+    const what = n === 1 ? (names[0] ? `"${names[0]}"` : 'your new photo') : `your ${n} new photos`;
+    const box = bubble('sogilex', `Saved ${what}. Want ${n === 1 ? 'it' : 'them'} on this site too?`);
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn chat-action';
+    btn.textContent = n === 1 ? 'Add it to my site' : 'Add them to my site';
+    btn.addEventListener('click', () => {
+      btn.remove();
+      const display = n === 1 ? `Add ${what} to my site.` : `Add my ${n} new photos to my site.`;
+      // Name the new photos by tag so Claude can't mix them up; keep the request under the 1,000-character limit.
+      const lead = `${display} Put ${n === 1 ? 'it' : 'them'} with my other photos on the page (or wherever ${n === 1 ? 'it fits' : 'they fit'} best). ${n === 1 ? "It's" : "They're"} the newest in my photo list: `;
+      let list = added.map((p) => `sogilex:photo:${p.id}${p.name ? ` ("${p.name.replace(/["<>]/g, '').slice(0, 40)}")` : ''}`);
+      if ((lead + list.join(', ')).length > 990) list = added.map((p) => `sogilex:photo:${p.id}`);
+      while (list.length && (lead + list.join(', ')).length > 990) list.pop();
+      sendEdit(display, lead + list.join(', ') + '.');
+    });
+    box.append(document.createElement('br'), btn);
+    $('editchat').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  async function sendEdit(display, msg) {
+    if (editing || building || !lastBuildId) return;
     const s = await session();
     if (!s) { bubble('sogilex', 'Your sign-in expired. Reload the page and sign in again.', 'err'); return; }
     const history = chat.filter((m) => !m.err).slice(-8).map(({ role, text }) => ({ role, text }));
-    chat.push({ role: 'owner', text: msg }); bubble('owner', msg);
+    chat.push({ role: 'owner', text: display }); bubble('owner', display);
     $('edit-msg').value = '';
     const wait = bubble('sogilex', 'Working on it. This usually takes under a minute.', 'working');
     setEditBusy(true);
@@ -342,7 +369,7 @@
     setEditBusy(false);
     showEditQuota();
     $('edit-msg').focus();
-  });
+  }
   $('undo').addEventListener('click', async () => {
     const b = builds.find((x) => x.build_id === lastBuildId);
     if (!b || !b.parent_id) return;
