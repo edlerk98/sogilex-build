@@ -24,12 +24,17 @@ const SITE_HEADERS = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
   'Cache-Control': 'public, max-age=60',
+  // Browsers remember to use https for a year, so a link typed without it never lands on an insecure page.
+  'Strict-Transport-Security': 'max-age=31536000',
 };
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     const host = url.hostname.toLowerCase();
+    // Never serve anything over plain http: browsers warn visitors that a contact form isn't secure. (Cloudflare's
+    // "Always Use HTTPS" does this too; this keeps it true if that setting is ever turned off.) 308 keeps a POST a POST.
+    if (url.protocol === 'http:') return Response.redirect('https://' + url.host + url.pathname + url.search, 308);
     if (host === ROOT || host === 'www.' + ROOT) return Response.redirect('https://sogilex.com/', 301);
     if (!host.endsWith('.' + ROOT)) return page(404, 'Not found', 'There is nothing here.');
     const slug = host.slice(0, -(ROOT.length + 1));
