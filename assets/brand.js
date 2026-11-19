@@ -23,7 +23,7 @@ window.SogilexBrand = (() => {
     try {
       const { data, error } = await db.from('brand_kits').select('logo, logo_name, colors').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
-      return data || { logo: null, logo_name: null, colors: [] };
+      return await shrinkSaved(db, uid, data || { logo: null, logo_name: null, colors: [] });
     } catch { return { logo: null, logo_name: null, colors: [], failed: true }; }
   }
   async function save(db, uid, kit) {
@@ -83,12 +83,38 @@ window.SogilexBrand = (() => {
     if (file.size > MAX_BYTES) throw new Error('That file is over 5 MB. Please use a smaller version of your logo.');
     const { img, url } = await readImage(file);
     try {
-      let canvas = draw(img, 600, 300);
-      let data = canvas.toDataURL('image/png');
-      if (data.length > 380000) { canvas = draw(img, 360, 180); data = canvas.toDataURL('image/png'); }
+      const { canvas, data } = smallest(img);
       if (data.length > 380000) throw new Error('That logo is very detailed. Please use a simpler or smaller version.');
       return { logo: data, logo_name: name, colors: colorsOf(canvas) };
     } finally { URL.revokeObjectURL(url); }
+  }
+  // Logos show at most about 90 px tall (and under an inch tall in print), so 480×200 is plenty, even on sharp
+  // screens. Step down further until the file is light: it's loaded on every page of the owner's site.
+  const SIZES = [[480, 200], [400, 168], [320, 136]];
+  const LIGHT = 100000; // characters of data URL, about 75 KB of file
+  function smallest(img) {
+    let best = null;
+    for (const [w, hgt] of SIZES) {
+      const canvas = draw(img, w, hgt);
+      const data = canvas.toDataURL('image/png');
+      if (!best || data.length < best.data.length) best = { canvas, data };
+      if (data.length <= LIGHT) break;
+    }
+    return best;
+  }
+  // Logos saved before this change can be several times bigger: shrink them once, quietly, keeping the colours.
+  async function shrinkSaved(db, uid, kit) {
+    if (!kit || !kit.logo || kit.logo.length <= LIGHT * 1.4) return kit;
+    try {
+      const img = new Image();
+      img.src = kit.logo;
+      await img.decode();
+      const { data } = smallest(img);
+      if (data.length >= kit.logo.length * 0.8) return kit;
+      const next = { ...kit, logo: data };
+      await save(db, uid, next);
+      return next;
+    } catch { return kit; }
   }
 
   // ---------- the "Add your logo here" box ----------

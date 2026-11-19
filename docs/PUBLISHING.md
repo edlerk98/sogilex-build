@@ -17,8 +17,10 @@ with Sogilex sign-in).
 - At publish time the Worker strips scripts, frames, objects, `<base>`, meta refresh, external stylesheets,
   event handlers, `javascript:` links, password fields and comments; points every form at `/__form`; adds a
   honeypot field and the "Made with Sogilex · Report this site" footer.
-- Logos: Build writes `<img src="sogilex:logo">`; at publish time the Worker swaps in the owner's logo from
-  `brand_kits` (a PNG data URL), or removes the tag if there is none.
+- Logos: Build writes `<img src="sogilex:logo">`; at publish time the Worker copies the owner's logo from
+  `brand_kits` (must be a real PNG) to KV as `logo:<name>` and points every logo tag at `/logo.png` (one cached
+  file instead of a copy inside the page per tag), or removes the tags if there is none. Logos are stored at most
+  480×200 (~100 KB); older, bigger ones are shrunk the next time the owner opens Build or Menus.
 - Photos (2026-11-19): Build writes `sogilex:photo:<id>` (in `<img>` or CSS). At publish time the Worker looks the
   ids up in `site_photos` with the owner's own sign-in (so only their own photos), downloads each from the private
   `site-photos` bucket, stores it in KV as `photo:<name>:<id>` (list in `photos:<name>`), and points the page at

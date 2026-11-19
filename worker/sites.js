@@ -4,6 +4,8 @@
 //                           Content-Security-Policy: no scripts, nothing loaded from elsewhere.
 //   name.sogilex.net/__form receives the site's contact form and stores it through Supabase.
 //   name.sogilex.net/photos/<id>.jpg  the owner's photos that the site uses, copied to KV when it's published.
+//   name.sogilex.net/logo.png          the owner's logo, copied to KV when the site is published (one cached file,
+//                                      instead of a copy inside the page for every place the logo appears).
 //   api.sogilex.net         publish / unpublish, called by build.sogilex.com with the person's sign-in.
 //   sogilex.net, www        redirect to sogilex.com.
 //
@@ -38,6 +40,7 @@ export default {
       if (req.method !== 'POST') return Response.redirect(url.origin + '/', 303);
       return form(req, env, slug, url);
     }
+    if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveLogo(env, slug, req.method);
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
     if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
@@ -87,14 +90,15 @@ async function api(req, env, url) {
       try { body = await req.json(); } catch { return json({ error: 'Send JSON.' }, 400); }
       const result = await rpc(env, 'publish_site', { p_build_id: String(body.build_id || ''), p_slug: String(body.slug || '') }, token);
       const withPhotos = await copyPhotos(env, token, result.slug, result.html);
-      const html = await prepare(withPhotos, result.slug, result.logo);
+      const hasLogo = await copyLogo(env, result.slug, result.logo);
+      const html = await prepare(withPhotos, result.slug, hasLogo);
       await env.SITES.put('site:' + result.slug, html);
-      if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); }
+      if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); await env.SITES.delete('logo:' + result.old_slug); }
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
     }
     if (url.pathname === '/unpublish') {
       const slug = await rpc(env, 'unpublish_site', {}, token);
-      if (slug) { await env.SITES.delete('site:' + slug); await dropPhotos(env, slug, []); }
+      if (slug) { await env.SITES.delete('site:' + slug); await dropPhotos(env, slug, []); await env.SITES.delete('logo:' + slug); }
       return json({ ok: true, slug: slug || null });
     }
     return json({ error: 'Not found.' }, 404);
@@ -145,6 +149,25 @@ async function dropPhotos(env, slug, keep) {
   if (!keep.length) await env.SITES.delete('photos:' + slug);
 }
 
+// The logo comes from brand_kits as a PNG data URL; store it as a real file the page points at.
+async function copyLogo(env, slug, logo) {
+  const m = typeof logo === 'string' && logo.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) { await env.SITES.delete('logo:' + slug); return false; }
+  const bin = atob(m[1]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50) { await env.SITES.delete('logo:' + slug); return false; } // not a PNG
+  await env.SITES.put('logo:' + slug, bytes);
+  return true;
+}
+async function serveLogo(env, slug, method) {
+  const bytes = await env.SITES.get('logo:' + slug, 'arrayBuffer');
+  if (!bytes) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
+  return new Response(method === 'HEAD' ? null : bytes, {
+    headers: { 'Content-Type': 'image/png', 'Content-Length': String(bytes.byteLength), 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' },
+  });
+}
+
 async function servePhoto(env, slug, id, method) {
   const bytes = await env.SITES.get(`photo:${slug}:${id}`, 'arrayBuffer');
   if (!bytes) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
@@ -165,15 +188,15 @@ async function servePhoto(env, slug, id, method) {
 const ACTIVE = 'script, iframe, frame, frameset, object, embed, applet, base, portal, meta[http-equiv], link';
 const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'srcset', 'poster', 'data']);
 
-async function prepare(html, slug, logo) {
+async function prepare(html, slug, hasLogo) {
   const footer = `<div style="all:initial;display:block;padding:14px 16px;text-align:center;font:13px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;background:#120A18;color:#BBA9C2">Made with <a href="https://sogilex.com/" style="color:#FF9A4D">Sogilex</a> · <a href="mailto:hello@sogilex.com?subject=${encodeURIComponent('Report: ' + slug + '.' + ROOT)}" style="color:#BBA9C2">Report this site</a></div>`;
   const trap = '<div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>';
   const rewriter = new HTMLRewriter()
     .on(ACTIVE, { element(el) { el.remove(); } })
-    // The owner's logo: Build writes src="sogilex:logo"; the real image (a PNG data URL) goes in here.
+    // The owner's logo: Build writes src="sogilex:logo"; it points at /logo.png (copied at publish), or goes away.
     .on('img', { element(el) {
       if (el.getAttribute('src') !== 'sogilex:logo') return;
-      if (typeof logo === 'string' && logo.startsWith('data:image/png;base64,')) el.setAttribute('src', logo);
+      if (hasLogo) el.setAttribute('src', '/logo.png');
       else el.remove();
     } })
     .on('*', {
