@@ -84,6 +84,7 @@ async function setEmail(req: Request, body: Record<string, unknown>) {
       `Someone using Sogilex (${user.email ?? "a Sogilex account"}) asked for messages from their website's contact form to be emailed to this address.\n\nTo start getting them, open this link and press the button:\n${link}\n\nIf you weren't expecting this, ignore this email. Nothing will be sent to you.`,
       wrap(`<p>Someone using Sogilex (<b>${esc(user.email ?? "a Sogilex account")}</b>) asked for messages from their website's contact form to be emailed to this address.</p><p><a href="${link}" style="display:inline-block;background:#B0185F;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none;font-weight:600">Confirm this address</a></p><p style="color:#5e4d63;font-size:13px">If you weren't expecting this, ignore this email. Nothing will be sent to you.</p>`));
   } catch (e) {
+    console.error("confirmation email failed", (e as Error).message);
     return json(req, { error: (e as Error).message.startsWith("Email sending") ? (e as Error).message : "Couldn't send the confirmation email. Try again in a few minutes." }, 502);
   }
   return json(req, { email, confirmed: false });
