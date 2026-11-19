@@ -1,5 +1,7 @@
-// Sogilex Menus (milestone 1): a form for the menu, a live print preview that fits itself to the page, and
-// autosave to the person's Sogilex account. No AI: every word and price on the menu is exactly what was typed.
+// Sogilex Menus (milestone 1+): a form for the menu, a live print preview that fits itself to one page or flows onto
+// a second (front and back), and autosave to the person's Sogilex account. No AI: every word and price on the menu is
+// exactly what was typed. Section kinds: regular, specials box, set price (prix fixe / tasting). Add-ons per dish or
+// per section ("Add bacon +2", "Choice of fries or salad"). Restaurant-type starters set sections and a look, never dishes.
 (() => {
   const SUPABASE_URL = 'https://sdltqbctuieyjlujsdhj.supabase.co';
   const PUBLISHABLE_KEY = 'sb_publishable_SLyXLfw7hZQTL_xEpofo8g_XgKZZStM'; // public by design; RLS protects data
@@ -11,10 +13,13 @@
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
 
   const TAGS = [['V', 'vegetarian'], ['VG', 'vegan'], ['GF', 'gluten-free'], ['SP', 'spicy'], ['N', 'contains nuts']];
-  const blankItem = () => ({ name: '', desc: '', prices: [{ label: '', amount: '' }], tags: [] });
-  const blankSection = () => ({ name: '', note: '', items: [blankItem()] });
+  const blankItem = (labels) => ({ name: '', desc: '', prices: (labels || ['']).map((label) => ({ label, amount: '' })), tags: [], extras: null });
+  const blankSection = (name, kind, extrasLead, labels) => ({
+    name: name || '', note: '', kind: kind || 'normal', price: '', items: [blankItem(labels)],
+    extras: extrasLead ? { lead: extrasLead, list: [{ name: '', price: '' }] } : null,
+  });
   const blankMenu = () => ({
-    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', showLogo: true,
+    v: 1, name: '', tagline: '', showTagline: true, currency: '$', showCurrency: true, paper: 'letter', pages: 1, showLogo: true,
     font: 'classic', palette: 'cream', layout: 'centered', border: 'none',
     sections: [blankSection()], footer: { address: '', phone: '', hours: '', website: '' },
   });
@@ -41,6 +46,32 @@
   ];
   const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines']];
   const BORDERS = [['none', 'No border'], ['thin', 'Thin frame'], ['double', 'Double frame']];
+  const KINDS = [['normal', 'Regular section'], ['specials', 'Specials box'], ['set', 'Set price (prix fixe, tasting)']];
+  // Starters: section headings and a look for a type of restaurant. Never dishes or prices (those are the owner's facts).
+  const STARTERS = [
+    ['grill', 'Bar & grill', { font: 'bold', palette: 'charcoal', layout: 'left', border: 'none', pages: 2, showCurrency: true },
+      [['Specials', 'specials'], ['Starters'], ['Wings'], ['Burgers', 'normal', 'Add'], ['Sandwiches'], ['Salads'], ['Sides'], ['Drinks']]],
+    ['fine', 'Fine dining', { font: 'elegant', palette: 'cream', layout: 'centered', border: 'thin', pages: 1, showCurrency: false },
+      [['Tasting menu', 'set'], ['To begin'], ['Mains'], ['Dessert']]],
+    ['cafe', 'Café & bakery', { font: 'warm', palette: 'butter', layout: 'centered', border: 'none', pages: 1, showCurrency: true },
+      [['Coffee', 'normal', '', ['Small', 'Large']], ['Tea'], ['Breakfast'], ['Pastries'], ['Lunch']]],
+    ['pizza', 'Pizzeria', { font: 'bold', palette: 'terracotta', layout: 'left', border: 'none', pages: 2, showCurrency: true },
+      [['Specials', 'specials'], ['Pizzas', 'normal', 'Toppings', ['Small', 'Large']], ['Starters'], ['Salads'], ['Desserts'], ['Drinks']]],
+    ['taqueria', 'Taqueria & food truck', { font: 'modern', palette: 'sage', layout: 'left', border: 'none', pages: 1, showCurrency: true },
+      [['Tacos', 'normal', 'Add'], ['Burritos'], ['Plates'], ['Sides'], ['Drinks']]],
+  ];
+  // Fill in anything an older saved menu doesn't have, and keep the shapes right.
+  function normalize(m) {
+    const ex = (e) => (e && Array.isArray(e.list) ? { lead: String(e.lead || ''), list: e.list.map((x) => ({ name: String(x.name || ''), price: String(x.price || '') })) } : null);
+    m.pages = m.pages === 2 ? 2 : 1;
+    m.sections = (m.sections || []).map((sec) => ({
+      name: '', note: '', price: '', ...sec,
+      kind: KINDS.some(([k]) => k === sec.kind) ? sec.kind : 'normal',
+      extras: ex(sec.extras),
+      items: (sec.items || []).map((it) => ({ name: '', desc: '', tags: [], ...it, prices: it.prices && it.prices.length ? it.prices : [{ label: '', amount: '' }], extras: ex(it.extras) })),
+    }));
+    return m;
+  }
   function paletteOf(id) {
     if (id === 'logo' && kit.colors && kit.colors[0]) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(kit.colors[0])];
     return PALETTES.find((p) => p[0] === id) || PALETTES[0];
@@ -69,6 +100,32 @@
   function field(obj, key, attrs) {
     return h('input', { class: 'input', type: 'text', value: obj[key] || '', ...attrs, oninput: (e) => { obj[key] = e.target.value; changed(); } });
   }
+  // Add-ons for a dish or a whole section: a lead word ("Add", "Choice of") and names with optional prices.
+  function extrasEditor(owner, startLabel) {
+    if (!owner.extras) {
+      return h('button', { type: 'button', class: 'iconbtn', text: startLabel, onclick: () => { owner.extras = { lead: 'Add', list: [{ name: '', price: '' }] }; changed(true); } });
+    }
+    const ex = owner.extras;
+    return h('div', { class: 'mextras' },
+      h('div', { class: 'mrow' },
+        h('label', { class: 'mini' }, 'Starts with'),
+        field(ex, 'lead', { class: 'input elead', maxlength: '24', placeholder: 'Add', 'aria-label': 'Word before the add-ons, e.g. Add or Choice of' }),
+        h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove these add-ons', text: '✕', onclick: () => { owner.extras = null; changed(true); } })),
+      ex.list.map((x, i) => h('div', { class: 'mprice' },
+        field(x, 'name', { class: 'input ename', maxlength: '40', placeholder: i ? 'Avocado' : 'Bacon', 'aria-label': `Add-on ${i + 1}` }),
+        field(x, 'price', { class: 'input pamount', maxlength: '16', placeholder: '+2 (opt.)', 'aria-label': `Add-on ${i + 1} price` }),
+        ex.list.length > 1 ? h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove this add-on', text: '✕', onclick: () => { ex.list.splice(i, 1); changed(true); } }) : null)),
+      ex.list.length < 10 ? h('button', { type: 'button', class: 'iconbtn', text: '+ another', onclick: () => { ex.list.push({ name: '', price: '' }); changed(true); } }) : null);
+  }
+  function applyStarter(id) {
+    const st = STARTERS.find((x) => x[0] === id);
+    if (!st) return;
+    const hasDishes = menu.sections.some((sec) => sec.items.some((it) => it.name.trim()));
+    if (hasDishes && !confirm(`Start over with ${st[1]} sections? Your dishes will be removed. Your name, logo and contact details stay.`)) return;
+    Object.assign(menu, st[2]);
+    menu.sections = st[3].map(([name, kind, lead, labels]) => blankSection(name, kind, lead, labels));
+    changed(true);
+  }
   function move(list, i, d) { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; changed(true); }
 
   // ---------- the form ----------
@@ -76,6 +133,11 @@
     const root = $('fields');
     root.replaceChildren();
     const wrap = h('div', { class: 'mfields' });
+
+    wrap.append(h('div', { class: 'mgroup' },
+      h('h3', { text: 'Start from a type of restaurant' }),
+      h('p', { class: 'mhint', text: 'Sets up the sections and a matching look. You add your own dishes and prices.' }),
+      h('div', { class: 'choices' }, STARTERS.map(([id, label]) => h('button', { type: 'button', class: 'choice', onclick: () => applyStarter(id) }, label)))));
 
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Restaurant' }),
@@ -125,9 +187,11 @@
             h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Move dish down', text: '↓', onclick: () => move(sec.items, ii, 1) }),
             h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove dish', text: '✕', onclick: () => { sec.items.splice(ii, 1); changed(true); } })),
           field(it, 'desc', { maxlength: '160', placeholder: 'Short description (optional)', 'aria-label': 'Description' }),
-          ...prices,
+          ...(sec.kind === 'set' ? [] : prices),
+          it.extras ? extrasEditor(it, '') : null,
           h('div', { class: 'mrow' },
-            it.prices.length < 4 ? h('button', { type: 'button', class: 'iconbtn', text: '+ another size', onclick: () => { it.prices.push({ label: '', amount: '' }); changed(true); } }) : null,
+            sec.kind !== 'set' && it.prices.length < 4 ? h('button', { type: 'button', class: 'iconbtn', text: '+ another size', onclick: () => { it.prices.push({ label: '', amount: '' }); changed(true); } }) : null,
+            !it.extras ? extrasEditor(it, '+ add-ons') : null,
             h('div', { class: 'tags', role: 'group', 'aria-label': 'Dietary tags' }, TAGS.map(([code, label]) =>
               h('label', { class: 'mini', title: label }, h('input', { type: 'checkbox', checked: it.tags.includes(code), onchange: (e) => {
                 it.tags = e.target.checked ? [...new Set([...it.tags, code])] : it.tags.filter((t) => t !== code); changed();
@@ -142,9 +206,21 @@
             if (sec.items.some((i) => i.name) && !confirm(`Remove the section "${sec.name || 'untitled'}" and its dishes?`)) return;
             menu.sections.splice(si, 1); changed(true);
           } })),
-        field(sec, 'note', { maxlength: '100', placeholder: 'Note under the section (optional), e.g. Served with rice', 'aria-label': 'Section note' }),
+        h('div', { class: 'mrow' },
+          h('label', { class: 'mini', for: `m-kind-${si}` }, 'Kind'),
+          h('select', { class: 'mselect', id: `m-kind-${si}`, onchange: (e) => { sec.kind = e.target.value; changed(true); } },
+            KINDS.map(([k, label]) => h('option', { value: k, selected: sec.kind === k ? true : null }, label)))),
+        sec.kind === 'set' ? h('div', { class: 'mprice' },
+          h('label', { class: 'mini', for: `m-setp-${si}` }, 'Price for the whole set'),
+          field(sec, 'price', { id: `m-setp-${si}`, class: 'input pamount', maxlength: '16', placeholder: '95' })) : null,
+        sec.kind === 'set' ? h('p', { class: 'mhint', text: 'Dishes in a set have no prices of their own. For a wine pairing, use "+ add-ons for the whole section" (e.g. Wine pairing 60).' }) : null,
+        sec.kind === 'specials' ? h('p', { class: 'mhint', text: 'Prints in a box so it stands out. Good for happy hour, daily specials or a combo deal.' }) : null,
+        field(sec, 'note', { maxlength: '100', placeholder: sec.kind === 'set' ? 'Note, e.g. Five courses, served to the whole table' : 'Note under the section (optional), e.g. Served with rice', 'aria-label': 'Section note' }),
         items,
-        h('button', { type: 'button', class: 'addbtn', text: '+ Add a dish', onclick: () => { sec.items.push(blankItem()); changed(true); } })));
+        h('div', { class: 'mrow' },
+          h('button', { type: 'button', class: 'addbtn', text: '+ Add a dish', onclick: () => { sec.items.push(blankItem()); changed(true); } }),
+          !sec.extras ? extrasEditor(sec, '+ add-ons for the whole section') : null),
+        sec.extras ? h('div', { class: 'msec-extras' }, h('div', { class: 'choice-label', text: 'Add-ons for the whole section' }), extrasEditor(sec, '')) : null));
     });
     wrap.append(h('button', { type: 'button', class: 'addbtn', text: '+ Add a section', onclick: () => { menu.sections.push(blankSection()); changed(true); } }));
 
@@ -168,92 +244,177 @@
     root.append(wrap);
   }
 
-  // ---------- the menu page ----------
+  // ---------- the menu pages ----------
   function priceText(amount) {
     const a = (amount || '').trim();
     if (!a) return '';
     return menu.showCurrency && menu.currency && /^\d/.test(a) ? menu.currency + a : a;
   }
-  function renderMenu(target) {
-    target.replaceChildren();
-    target.className = ['menu-page', menu.paper === 'a4' ? 'a4' : '', 'font-' + menu.font, 'layout-' + menu.layout, 'border-' + menu.border].filter(Boolean).join(' ');
-    const [, , bg, ink, muted, accent] = paletteOf(menu.palette);
-    target.style.setProperty('--m-bg', bg); target.style.setProperty('--m-ink', ink);
-    target.style.setProperty('--m-muted', muted); target.style.setProperty('--m-accent', accent);
-    const head = h('header', { class: 'm-head' },
-      kit.logo && menu.showLogo ? h('img', { class: 'm-logo', src: kit.logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
-      h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
-      menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
-      h('div', { class: 'm-rule' }));
-    const body = h('div', { class: 'm-body' });
-    const used = new Set();
+  function extrasEl(ex) {
+    if (!ex) return null;
+    const list = ex.list.filter((x) => x.name.trim());
+    if (!list.length) return null;
+    const p = h('p', { class: 'm-extras' }, ex.lead.trim() ? h('em', { text: ex.lead.trim() + ' ' }) : null);
+    list.forEach((x, i) => {
+      if (i) p.append(' · ');
+      p.append(x.name.trim());
+      if (x.price.trim()) p.append(h('span', { class: 'm-xprice', text: ' ' + priceText(x.price) }));
+    });
+    return p;
+  }
+  function itemEl(it, set) {
+    const prices = set ? [] : it.prices.filter((p) => p.amount.trim());
+    const priceEl = h('span', { class: 'm-price' });
+    prices.forEach((p, i) => {
+      if (i) priceEl.append(' · ');
+      if (p.label.trim()) priceEl.append(h('small', { text: p.label.trim() + ' ' }));
+      priceEl.append(priceText(p.amount));
+    });
+    return h('div', { class: 'm-item' + (prices.length ? '' : ' noprice') },
+      h('span', { class: 'm-iname' }, it.name.trim(), it.tags.length ? h('span', { class: 'm-itags', text: it.tags.join(' · ') }) : null),
+      h('span', { class: 'm-dots', 'aria-hidden': 'true' }),
+      priceEl,
+      it.desc.trim() ? h('span', { class: 'm-desc', text: it.desc.trim() }) : null,
+      extrasEl(it.extras));
+  }
+  // A section's box with its heading. `cont` = it started on the page before ("Burgers, continued").
+  function sectionShell(sec, cont) {
+    const name = sec.name.trim();
+    const el = h('section', { class: 'm-sec' + (sec.kind === 'specials' ? ' m-specials' : '') + (sec.kind === 'set' ? ' m-set' : '') });
+    const setPrice = sec.kind === 'set' && sec.price.trim() && !cont;
+    if (setPrice) {
+      el.append(h('div', { class: 'm-sethead' }, h('h2', { text: name }), h('span', { class: 'm-dots', 'aria-hidden': 'true' }), h('span', { class: 'm-price', text: priceText(sec.price) })));
+    } else if (name) el.append(h('h2', { text: cont ? `${name}, continued` : name }));
+    if (!cont && sec.note.trim()) el.append(h('p', { class: 'm-note', text: sec.note.trim() }));
+    return el;
+  }
+  // The menu as a list of pieces that can flow between pages: single dishes for regular sections (a section can
+  // break between dishes), whole boxes for specials and set menus (they never break).
+  function buildUnits() {
+    const units = []; const used = new Set();
     for (const sec of menu.sections) {
       const items = sec.items.filter((it) => it.name.trim());
-      if (!items.length && !sec.name.trim()) continue;
-      const box = h('section', { class: 'm-sec' },
-        sec.name.trim() ? h('h2', { text: sec.name.trim() }) : null,
-        sec.note.trim() ? h('p', { class: 'm-note', text: sec.note.trim() }) : null);
-      for (const it of items) {
-        it.tags.forEach((t) => used.add(t));
-        const prices = it.prices.filter((p) => p.amount.trim());
-        const priceEl = h('span', { class: 'm-price' });
-        prices.forEach((p, i) => {
-          if (i) priceEl.append(' · ');
-          if (p.label.trim()) priceEl.append(h('small', { text: p.label.trim() + ' ' }));
-          priceEl.append(priceText(p.amount));
-        });
-        box.append(h('div', { class: 'm-item' },
-          h('span', { class: 'm-iname' }, it.name.trim(), it.tags.length ? h('span', { class: 'm-itags', text: it.tags.join(' · ') }) : null),
-          h('span', { class: 'm-dots', 'aria-hidden': 'true' }),
-          priceEl,
-          it.desc.trim() ? h('span', { class: 'm-desc', text: it.desc.trim() }) : null));
+      const extras = extrasEl(sec.extras);
+      if (!items.length && !sec.name.trim() && !extras) continue;
+      items.forEach((it) => it.tags.forEach((t) => used.add(t)));
+      const nodes = items.map((it) => itemEl(it, sec.kind === 'set'));
+      if (sec.kind !== 'normal') units.push({ sec, nodes: extras ? [...nodes, extras] : nodes });
+      else {
+        if (!nodes.length) units.push({ sec, nodes: [] });
+        nodes.forEach((n) => units.push({ sec, nodes: [n] }));
+        if (extras) units.push({ sec, nodes: [extras] });
       }
-      body.append(box);
     }
-    if (!body.childNodes.length) body.append(h('p', { class: 'm-empty', text: 'Add a section and some dishes, and your menu appears here.' }));
+    return { units, used };
+  }
+  function makePages() {
+    const [, , bg, ink, muted, accent] = paletteOf(menu.palette);
+    const n = menu.pages === 2 ? 2 : 1;
+    const { units, used } = buildUnits();
     const f = menu.footer;
     const contact = [f.address, f.phone, f.website].map((x) => (x || '').trim()).filter(Boolean).join(' · ');
     const legend = TAGS.filter(([code]) => used.has(code)).map(([code, label]) => `${code} ${label}`).join(' · ');
-    const foot = (contact || (f.hours || '').trim() || legend) ? h('footer', { class: 'm-foot' },
-      legend ? h('p', { text: legend }) : null,
-      (f.hours || '').trim() ? h('p', { text: f.hours.trim() }) : null,
-      contact ? h('p', { text: contact }) : null) : null;
-    target.append(head, body);
-    if (foot) target.append(foot);
-    return body;
+    const pages = [];
+    for (let i = 0; i < n; i++) {
+      const page = h('div', { class: ['menu-page', menu.paper === 'a4' ? 'a4' : '', 'font-' + menu.font, 'layout-' + menu.layout, 'border-' + menu.border, i ? 'page-next' : ''].filter(Boolean).join(' ') });
+      page.style.setProperty('--m-bg', bg); page.style.setProperty('--m-ink', ink);
+      page.style.setProperty('--m-muted', muted); page.style.setProperty('--m-accent', accent);
+      if (i === 0) {
+        page.append(h('header', { class: 'm-head' },
+          kit.logo && menu.showLogo ? h('img', { class: 'm-logo', src: kit.logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
+          h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
+          menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
+          h('div', { class: 'm-rule' })));
+      } else if (menu.name.trim()) {
+        page.append(h('header', { class: 'm-head m-head-small' }, h('p', { class: 'm-name-small', text: menu.name.trim() })));
+      }
+      const body = h('div', { class: 'm-body' });
+      page.append(body);
+      if (i === n - 1 && (contact || (f.hours || '').trim() || legend)) {
+        page.append(h('footer', { class: 'm-foot' },
+          legend ? h('p', { text: legend }) : null,
+          (f.hours || '').trim() ? h('p', { text: f.hours.trim() }) : null,
+          contact ? h('p', { text: contact }) : null));
+      }
+      pages.push({ page, body });
+    }
+    return { pages, units };
+  }
+  const over = (body) => body.scrollHeight > body.clientHeight + 1 || body.scrollWidth > body.clientWidth + 1;
+  // Fill each page in order until the next piece doesn't fit; the last page takes whatever is left.
+  function flow(pages, units) {
+    let k = 0;
+    const started = new Set();
+    pages.forEach(({ body }, pi) => {
+      body.replaceChildren();
+      const last = pi === pages.length - 1;
+      let cur = null; // { sec, el } of the section box open on this page
+      for (; k < units.length; k++) {
+        const u = units[k];
+        let fresh = false;
+        if (!cur || cur.sec !== u.sec) {
+          cur = { sec: u.sec, el: sectionShell(u.sec, started.has(u.sec)) };
+          body.append(cur.el); fresh = true;
+        }
+        u.nodes.forEach((nd) => cur.el.append(nd));
+        if (last || !over(body)) { started.add(u.sec); continue; }
+        // Doesn't fit: take it back and move to the next page, unless the page is still empty (then it has to go here).
+        if (fresh) { cur.el.remove(); cur = null; } else u.nodes.forEach((nd) => nd.remove());
+        if (!body.childNodes.length) {
+          cur = { sec: u.sec, el: sectionShell(u.sec, started.has(u.sec)) };
+          body.append(cur.el); u.nodes.forEach((nd) => cur.el.append(nd)); started.add(u.sec); k++;
+        }
+        break;
+      }
+    });
+    if (!units.length) pages[0].body.append(h('p', { class: 'm-empty', text: 'Add a section and some dishes, and your menu appears here.' }));
+    return pages.every(({ body }) => !over(body));
   }
 
-  // Shrink the type (never below ~10 pt) and switch to two columns until the menu fits on one page.
+  // Shrink the type (never below ~10 pt) and switch to two columns until the menu fits its page(s).
   const STEPS = [[1, 1], [1, 0.96], [1, 0.92], [2, 1], [2, 0.96], [2, 0.92], [2, 0.88], [2, 0.84], [2, 0.8]];
-  function fit(page, body) {
-    const over = () => body.scrollHeight > body.clientHeight + 1 || body.scrollWidth > body.clientWidth + 1;
+  function fit(pages, units) {
     for (const [cols, s] of STEPS) {
-      body.classList.toggle('two', cols === 2);
-      page.style.setProperty('--s', String(s));
-      if (!over()) return { ok: true, cols, s };
+      pages.forEach(({ page, body }) => { body.classList.toggle('two', cols === 2); page.style.setProperty('--s', String(s)); });
+      if (flow(pages, units)) {
+        const lastBody = pages[pages.length - 1].body;
+        return { ok: true, cols, s, emptyBack: pages.length > 1 && !lastBody.childNodes.length };
+      }
     }
     return { ok: false };
   }
   function scalePreview() {
-    const wrapEl = $('sheet-wrap'); const page = $('sheet');
+    const wrapEl = $('sheet-wrap'); const sheets = $('sheets');
     const avail = wrapEl.clientWidth - 36;
     // On wide screens the preview stays on screen while you edit, so fit it to the window height too.
     const sticky = window.matchMedia('(min-width: 901px)').matches;
+    sheets.classList.toggle('stacked', !sticky);
     const room = sticky ? window.innerHeight - 84 - 80 - 36 : Infinity;
-    const scale = Math.min(1, avail / page.offsetWidth, room / page.offsetHeight);
-    page.style.transform = `scale(${scale})`;
-    wrapEl.style.height = `${page.offsetHeight * scale + 36}px`;
+    const scale = Math.min(1, avail / sheets.offsetWidth, room / sheets.offsetHeight);
+    sheets.style.transform = `scale(${scale})`;
+    wrapEl.style.height = `${sheets.offsetHeight * scale + 36}px`;
   }
   function renderPreview() {
-    const page = $('sheet');
-    const body = renderMenu(page);
-    const r = fit(page, body);
+    const sheets = $('sheets');
+    const { pages, units } = makePages();
+    sheets.replaceChildren(...pages.map((p) => p.page));
+    sheets.style.transform = 'none';
+    const r = fit(pages, units);
     const fitEl = $('fit');
     fitEl.classList.toggle('warn', !r.ok);
-    fitEl.textContent = r.ok
-      ? (r.cols === 2 || r.s < 1 ? `Fits on one page${r.cols === 2 ? ', in two columns' : ''}${r.s < 1 ? `, type at ${Math.round(r.s * 100)}%` : ''}.` : 'Fits on one page.')
-      : 'Too long for one page. Remove a few dishes or shorten descriptions.';
+    const how = r.ok ? [r.cols === 2 ? 'in two columns' : '', r.s < 1 ? `type at ${Math.round(r.s * 100)}%` : ''].filter(Boolean).join(', ') : '';
+    fitEl.replaceChildren();
+    if (menu.pages === 2) {
+      fitEl.textContent = !r.ok ? 'Too long for two pages. Remove a few dishes or shorten descriptions.'
+        : r.emptyBack ? 'Everything fits on the front. You can switch to one page.'
+          : `Fits front and back${how ? ', ' + how : ''}. Print double-sided.`;
+    } else if (r.ok) {
+      fitEl.textContent = `Fits on one page${how ? ', ' + how : ''}.`;
+    } else {
+      fitEl.append('Too long for one page. ', h('button', { type: 'button', class: 'linkbtn', text: 'Use front and back', onclick: () => { menu.pages = 2; changed(); } }));
+    }
     $('paper').value = menu.paper;
+    $('pages').value = String(menu.pages);
     $('page-size').textContent = `@page { size: ${menu.paper === 'a4' ? 'A4' : 'letter'}; margin: 0; }`;
     scalePreview();
   }
@@ -279,13 +440,12 @@
 
   // ---------- start ----------
   $('paper').addEventListener('change', (e) => { menu.paper = e.target.value === 'a4' ? 'a4' : 'letter'; changed(); });
+  $('pages').addEventListener('change', (e) => { menu.pages = e.target.value === '2' ? 2 : 1; changed(); });
   $('print').addEventListener('click', () => {
     // Print a copy of the preview, which has already been fitted to the page (a hidden copy can't measure itself).
     renderPreview();
-    const copy = $('sheet').cloneNode(true);
-    copy.removeAttribute('id');
-    copy.style.transform = 'none';
-    $('print-root').replaceChildren(copy);
+    const copies = [...$('sheets').children].map((pg) => pg.cloneNode(true));
+    $('print-root').replaceChildren(...copies);
     window.print();
   });
   window.addEventListener('resize', scalePreview);
@@ -310,7 +470,7 @@
     try {
       const { data, error } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle().abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
-      if (data && data.data && Array.isArray(data.data.sections)) menu = { ...blankMenu(), ...data.data, footer: { ...blankMenu().footer, ...(data.data.footer || {}) } };
+      if (data && data.data && Array.isArray(data.data.sections)) menu = normalize({ ...blankMenu(), ...data.data, footer: { ...blankMenu().footer, ...(data.data.footer || {}) } });
       if (menu.logoColor && menu.palette === 'cream') menu.palette = 'logo';
       $('save-state').textContent = data ? 'Saved' : '';
     } catch { $('save-state').textContent = "Couldn't load your menu. Refresh to try again."; }

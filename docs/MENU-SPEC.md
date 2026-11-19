@@ -75,6 +75,14 @@ Photos, multiple languages, tri-folds and table tents, QR codes, online ordering
 
 ## Milestones
 
+**1b (done 2026-11-19): structure for different kinds of restaurant.** One page or front and back (the menu
+flows onto page 2; a section that breaks is headed "Name, continued"); add-ons per dish or per section with a lead
+word ("Add bacon +2", "Choice of fries or salad"); section kinds: regular, specials box, set price (prix fixe /
+tasting: one price on the heading, dishes unpriced, wine pairing as a section add-on); starters for Bar & grill,
+Fine dining, Café & bakery, Pizzeria, Taqueria & food truck that set section headings and a look, never dishes or
+prices. Saved menus from before load unchanged (missing fields are filled in).
+
+
 1. **No-AI menu.** Form, saved data, fixed markup, one hand-written house style, fit check, print. Already useful, costs nothing to run, and tests the hardest part (fitting and printing) first.
 2. **Claude designs.** `design-menu` function, style picker, font list, sanitizer, limits, `finished_at` and `stop_reason` tracking like Build.
 3. **Polish and launch.** Menu tab in the new Sogilex look, "Menus" card on sogilex.com goes live, privacy policy updated.

@@ -57,7 +57,16 @@ nav a[aria-current="page"] { color: var(--text); }
 .fit.warn { color: var(--warn); }
 .menu-preview .btn { min-height: 40px; font-size: 15px; }
 .sheet-wrap { position: relative; padding: 18px; background: #2A1F30; overflow: hidden; }
-.sheet-wrap .menu-page { transform-origin: top left; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }
+.sheets { display: flex; gap: 24px; width: max-content; transform-origin: top left; }
+.sheets.stacked { flex-direction: column; }
+.sheets .menu-page { box-shadow: 0 20px 60px rgba(0, 0, 0, .45); flex: none; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--lime); font: inherit; text-decoration: underline; cursor: pointer; min-height: 0; }
+.mselect { min-height: 36px; border-radius: 8px; background: #120A18; color: var(--text); border: 1px solid var(--ctl); font: 14px var(--body); padding: 0 8px; }
+.mextras { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--ctl); border-radius: 10px; }
+.mextras .elead { width: 120px; flex: 0 0 auto; min-height: 38px; padding: 8px 10px; font-size: 14px; }
+.mextras .ename { flex: 1 1 auto; min-width: 0; }
+.msec-extras { display: flex; flex-direction: column; gap: 6px; }
+.mextras > .iconbtn { align-self: flex-start; }
 
 /* ---------- the printed menu ---------- */
 /* Look = font pairing (font-*) + palette (--m-* colours, set by menus.js) + layout (layout-*) + border (border-*). */
@@ -105,6 +114,24 @@ nav a[aria-current="page"] { color: var(--text); }
 .m-foot { text-align: center; font-size: .82em; color: var(--m-muted); border-top: 1px solid var(--m-rule); padding-top: calc(10pt * var(--s)); margin-top: calc(8pt * var(--s)); }
 .m-foot p { margin: 0; }
 .m-foot p + p { margin-top: 2pt; }
+.m-extras { flex-basis: 100%; margin: calc(2pt * var(--s)) 0 0; font-size: .86em; color: var(--m-muted); overflow-wrap: anywhere; }
+.m-extras em { color: var(--m-ink); }
+.m-sec > .m-extras { margin: calc(-2pt * var(--s)) 0 0; break-inside: avoid; }
+.m-item.noprice .m-dots { visibility: hidden; }
+/* specials box: stands out without decoration; works in black and white */
+.m-specials { border: 1.5px solid var(--m-accent); padding: calc(10pt * var(--s)) calc(12pt * var(--s)) calc(4pt * var(--s)); break-inside: avoid; }
+.m-specials h2 { text-align: center; }
+.m-specials > .m-extras { margin-bottom: calc(8pt * var(--s)); }
+/* set price (prix fixe / tasting): one price on the section heading, dishes without prices */
+.m-set { break-inside: avoid; }
+.m-sethead { display: flex; align-items: baseline; margin: 0 0 calc(8pt * var(--s)); color: var(--m-accent); break-after: avoid; }
+.m-sethead h2 { margin: 0; }
+.m-sethead .m-price { font-family: var(--m-sec); font-size: calc(10.5pt * var(--s) * var(--m-ss)); font-weight: var(--m-sec-w); }
+.m-set .m-item .m-dots { display: none; }
+.m-set > .m-extras { margin-bottom: calc(4pt * var(--s)); }
+/* page 2: the name small at the top */
+.m-head-small { margin-bottom: calc(14pt * var(--s)); }
+.m-name-small { margin: 0; font-family: var(--m-head); text-transform: var(--m-head-tf); letter-spacing: var(--m-head-ls); font-weight: var(--m-head-w); font-size: calc(11pt * var(--s) * var(--m-hs)); color: var(--m-muted); }
 .m-empty { color: var(--m-muted); font-style: italic; text-align: center; margin-top: 30%; }
 
 /* layouts */
@@ -112,6 +139,8 @@ nav a[aria-current="page"] { color: var(--text); }
 .layout-left .m-logo { margin-left: 0; }
 .layout-left .m-rule { margin-left: 0; width: 100%; }
 .layout-left .m-sec h2 { padding-bottom: calc(4pt * var(--s)); border-bottom: 1px solid var(--m-rule); }
+.layout-left .m-sethead { padding-bottom: calc(4pt * var(--s)); border-bottom: 1px solid var(--m-rule); }
+.layout-left .m-sethead h2 { padding: 0; border: 0; }
 .layout-left .m-foot { text-align: left; }
 .layout-leaders .m-dots { margin: 0 5pt; border-bottom: 1.5px dotted var(--m-rule); transform: translateY(-.28em); }
 
@@ -125,7 +154,8 @@ nav a[aria-current="page"] { color: var(--text); }
   html, body { background: #fff !important; margin: 0 !important; }
   body > *:not(#print-root) { display: none !important; }
   #print-root { display: block !important; }
-  #print-root .menu-page { transform: none !important; box-shadow: none !important; }
+  #print-root .menu-page { transform: none !important; box-shadow: none !important; break-after: page; }
+  #print-root .menu-page:last-child { break-after: auto; }
 }
 
 @media (min-width: 901px) {
