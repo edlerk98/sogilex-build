@@ -40,7 +40,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); loadBuilds(true); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadKit(s.user.id); loadBuilds(true); showEditQuota(); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -114,11 +114,13 @@
       $('pub-count').textContent = String(site.messages || 0);
     }
     if (!$('pub-slug').value) $('pub-slug').value = site.slug || slugify($('name').value);
-    $('pub-go').disabled = !(builtOk && lastBuildId);
-    $('pub-go').textContent = live ? 'Publish this site instead' : 'Publish this site';
-    $('pub-hint').textContent = builtOk && lastBuildId
-      ? (live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.')
-      : 'Build a site first, then publish it here.';
+    const cur = builds.find((b) => b.build_id === lastBuildId);
+    const isLive = !!(cur && cur.live);
+    $('pub-go').disabled = !(builtOk && lastBuildId) || isLive;
+    $('pub-go').textContent = isLive ? 'This version is live' : live ? 'Publish this version' : 'Publish this site';
+    $('pub-hint').textContent = !(builtOk && lastBuildId) ? 'Build a site first, then publish it here.'
+      : isLive ? 'What you see here is what visitors see.'
+        : live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.';
   }
   async function publishCall(path, body) {
     const s = await session();
@@ -179,6 +181,7 @@
   // ---------- your sites (every finished build is kept; reopen any of them) ----------
   let builds = [];
   const decode = (t) => new DOMParser().parseFromString(t || '', 'text/html').body.textContent.trim();
+  const short = (t) => (t.length > 48 ? t.slice(0, 46).trimEnd() + '…' : t);
   const when = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   async function loadBuilds(openLatest) {
     try {
@@ -190,11 +193,13 @@
     sel.replaceChildren(...builds.map((b) => {
       const o = document.createElement('option');
       o.value = b.build_id;
-      o.textContent = `${decode(b.title) || 'Untitled site'} · ${when(b.created_at)}${b.live ? ' · live' : ''}`;
+      const note = b.kind === 'edit' ? ` · ${short(b.note || 'edited')}` : '';
+      o.textContent = `${decode(b.title) || 'Untitled site'} · ${when(b.created_at)}${note}${b.live ? ' · live' : ''}`;
       return o;
     }));
     $('versions').hidden = !builds.length;
     if (lastBuildId && builds.some((b) => b.build_id === lastBuildId)) sel.value = lastBuildId;
+    refreshEdit(); refreshPublish();
     // Coming back to Build: show the latest site straight away, unless a build is already on screen.
     if (openLatest && builds.length && !html) {
       await openBuild(builds[0].build_id);
@@ -202,7 +207,7 @@
       st.textContent = `This is your latest site, from ${when(builds[0].created_at)}. Pick another above the preview, or build a new one.`;
     }
   }
-  async function openBuild(id) {
+  async function openBuild(id, keepChat) {
     const st = $('build-status');
     try {
       const { data, error } = await db.rpc('my_build', { p_build_id: id }).abortSignal(AbortSignal.timeout(15000));
@@ -216,11 +221,113 @@
       $('pub-status').textContent = ''; $('pub-status').className = 'status';
       refreshPublish();
       st.className = 'status'; st.textContent = '';
+      if (!keepChat) { chat = []; renderChat(); }
+      refreshEdit();
     } catch {
       st.className = 'status err'; st.textContent = "Couldn't open that site. Check your connection and try again.";
     }
   }
   $('ver').addEventListener('change', (e) => openBuild(e.target.value));
+
+  // ---------- change your site (chat edits; each change is saved as a new version) ----------
+  const EDIT_URL = `${SUPABASE_URL}/functions/v1/edit-site`;
+  let chat = []; // [{ role: 'owner' | 'sogilex', text, err }] for the site on screen
+  let editing = false;
+  let building = false;
+  function bubble(role, text, cls) {
+    const d = document.createElement('div');
+    d.className = `bubble ${role}${cls ? ' ' + cls : ''}`;
+    d.textContent = text;
+    $('chatlog').append(d);
+    $('chatlog').scrollTop = $('chatlog').scrollHeight;
+    return d;
+  }
+  function renderChat() { $('chatlog').replaceChildren(); chat.forEach((m) => bubble(m.role, m.text, m.err ? 'err' : '')); }
+  function refreshEdit() {
+    $('editchat').hidden = !(builtOk && lastBuildId) || building;
+    const b = builds.find((x) => x.build_id === lastBuildId);
+    $('undo').hidden = !(b && b.parent_id && builds.some((x) => x.build_id === b.parent_id)) || editing;
+  }
+  function setEditBusy(on) {
+    editing = on;
+    $('edit-go').disabled = on; $('edit-msg').disabled = on; $('ver').disabled = on || building;
+    $('go').disabled = on || building;
+    $('edit-go').textContent = on ? 'Working…' : 'Make this change';
+    refreshEdit();
+  }
+  async function showEditQuota() {
+    try {
+      const { data, error } = await db.rpc('edit_quota').abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      $('edit-quota').textContent = data > 0 ? `${data} ${data === 1 ? 'edit' : 'edits'} left today` : 'No edits left today';
+      $('edit-quota').classList.toggle('out', data <= 0);
+    } catch { $('edit-quota').textContent = ''; }
+  }
+  $('edit-msg').addEventListener('keydown', (e) => {
+    // Enter sends; Shift+Enter makes a new line.
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('edit-form').requestSubmit(); }
+  });
+  $('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (editing || building || !lastBuildId) return;
+    const msg = $('edit-msg').value.trim();
+    if (msg.length < 2) { $('edit-msg').focus(); return; }
+    const s = await session();
+    if (!s) { bubble('sogilex', 'Your sign-in expired. Reload the page and sign in again.', 'err'); return; }
+    const history = chat.filter((m) => !m.err).slice(-8).map(({ role, text }) => ({ role, text }));
+    chat.push({ role: 'owner', text: msg }); bubble('owner', msg);
+    $('edit-msg').value = '';
+    const wait = bubble('sogilex', 'Working on it. This usually takes under a minute.', 'working');
+    setEditBusy(true);
+    let result = null; let failed = null;
+    try {
+      const res = await fetch(EDIT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ build_id: lastBuildId, message: msg, history }),
+      });
+      if (!res.ok || !res.body) {
+        let m = `That change didn't work (${res.status}).`;
+        try { const j = await res.json(); if (j.error) m = j.error; } catch { /* not JSON */ }
+        throw new Error(m);
+      }
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const lineText = buf.slice(0, nl); buf = buf.slice(nl + 1);
+          if (!lineText.trim()) continue;
+          const m = JSON.parse(lineText);
+          if (m.t === 'done') result = m; else if (m.t === 'error') failed = m.message;
+        }
+      }
+      if (!result && !failed) failed = 'The connection dropped before the change was finished. Please try again.';
+    } catch (err) { failed = (err && err.message) || 'Something went wrong. Please try again.'; }
+    wait.remove();
+    if (failed) { chat.push({ role: 'sogilex', text: failed, err: true }); bubble('sogilex', failed, 'err'); }
+    else {
+      chat.push({ role: 'sogilex', text: result.reply }); bubble('sogilex', result.reply);
+      if (result.build_id && result.html) {
+        html = result.html; lastBuildId = result.build_id; builtOk = true;
+        paint(true); setDone(true);
+        $('pub-status').textContent = ''; $('pub-status').className = 'status';
+        await loadBuilds(false);
+      }
+    }
+    setEditBusy(false);
+    showEditQuota();
+    $('edit-msg').focus();
+  });
+  $('undo').addEventListener('click', async () => {
+    const b = builds.find((x) => x.build_id === lastBuildId);
+    if (!b || !b.parent_id) return;
+    await openBuild(b.parent_id, true);
+    const t = 'Went back to the version before that change.';
+    chat.push({ role: 'sogilex', text: t }); bubble('sogilex', t);
+  });
 
   // ---------- preview ----------
   let paintTimer = null;
@@ -256,6 +363,7 @@
     html = ''; paint(true); setDone(false);
     builtOk = false; lastBuildId = null; $('pub-status').textContent = ''; $('pub-status').className = 'status'; refreshPublish();
     $('ver').disabled = true;
+    building = true; chat = []; renderChat(); refreshEdit();
     const go = $('go'); go.disabled = true; go.classList.add('working'); go.firstChild.textContent = 'Building… ';
     $('frame').closest('.preview').classList.add('building');
     st.textContent = 'Designing your site. This usually takes one to two minutes.';
@@ -314,6 +422,7 @@
       st.textContent = 'Done. Download it, or tweak the brief and build again.'; st.classList.add('ok');
     }
     $('ver').disabled = false;
+    building = false; refreshEdit();
     showQuota();
     loadBuilds(false);
   });

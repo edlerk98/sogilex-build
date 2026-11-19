@@ -125,6 +125,22 @@
         <button class="ghost" type="button" id="copy" disabled>Copy code</button>
         <button class="ghost" type="button" id="newtab" disabled>Open full size</button>
       </div>
+      <section class="editchat" id="editchat" hidden aria-labelledby="edit-h">
+        <div class="panel-row">
+          <h2 class="panel-h" id="edit-h">Change your site</h2>
+          <span class="quota" id="edit-quota" aria-live="polite"></span>
+        </div>
+        <p class="muted edit-intro">Tell Sogilex what to change, in your own words. Each change is saved as a new version, so you can always go back.</p>
+        <div class="chatlog" id="chatlog" role="log" aria-live="polite"></div>
+        <form id="edit-form" class="edit-form" novalidate>
+          <label class="sr-only" for="edit-msg">What would you like to change?</label>
+          <textarea class="input" id="edit-msg" rows="2" maxlength="1000" placeholder="For example: change the headline to &quot;Capturing your moments&quot;, or add a section about wedding packages"></textarea>
+          <div class="edit-row">
+            <button class="ghost" type="button" id="undo" hidden>Undo last change</button>
+            <button class="btn" type="submit" id="edit-go">Make this change</button>
+          </div>
+        </form>
+      </section>
       <section class="publish" id="publish" hidden aria-labelledby="pub-h">
         <div class="panel-row">
           <h2 class="panel-h" id="pub-h">Publish</h2>
@@ -157,8 +173,8 @@
   <section id="limits" class="wrap block" aria-labelledby="limits-h">
     <h2 id="limits-h">Privacy &amp; limits</h2>
     <ul class="notes">
-      <li><b>Three free builds a day</b> per person while Sogilex Build is in beta.</li>
-      <li><b>Your description is sent to Anthropic</b> to generate the site. We don't keep the description. We keep each finished site so you can reopen and publish it, and we record when builds happen and how long they take, to manage costs.</li>
+      <li><b>Three free builds and 30 edits a day</b> per person while Sogilex Build is in beta. Builds or edits that fail don't count.</li>
+      <li><b>Your description, and any change you ask for, is sent to Anthropic</b> to generate or edit the site. We don't keep the description. We keep each finished site and each edited version so you can reopen and publish it, with a one-line note of what each edit changed, and we record when builds happen and how long they take, to manage costs.</li>
       <li><b>Publishing (beta)</b> puts your site at <code>your-name.sogilex.net</code>. Messages sent through its contact form are stored for you and shown in Build. Published sites carry a small "Made with Sogilex" footer with a link to report abuse.</li>
       <li><b>Facts stay yours to fill in.</b> Build never invents prices, phone numbers, addresses or reviews. It leaves placeholders like <code>[PHONE NUMBER]</code> for you to replace.</li>
       <li><b>No logins or look-alikes.</b> Build won't make pages that imitate real companies or collect passwords or card details.</li>
