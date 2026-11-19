@@ -144,6 +144,26 @@ nav a[aria-current="page"] { color: var(--text); }
 .layout-left .m-foot { text-align: left; }
 .layout-leaders .m-dots { margin: 0 5pt; border-bottom: 1.5px dotted var(--m-rule); transform: translateY(-.28em); }
 
+/* layout: colour bands (section headings on solid bands of the accent colour; ornament under the name) */
+.menu-page { --m-on: #FFFFFF; }
+.menu-page.layout-banner { --m-sec-style: normal; --m-sec-tf: uppercase; --m-sec-ls: .14em; --m-ss: 1.15; }
+.menu-page.layout-banner.font-bold { --m-sec-ls: .1em; --m-ss: 1.6; }
+.layout-banner .m-name { color: var(--m-accent); }
+.layout-banner .m-rule { width: 150pt; height: 0; background: none; border-top: 1px solid var(--m-accent); position: relative; margin-top: calc(14pt * var(--s)); }
+.layout-banner .m-rule::after { content: ""; position: absolute; left: 50%; top: -4.5pt; width: 8pt; height: 8pt; background: var(--m-accent); transform: translateX(-50%) rotate(45deg); outline: 3pt solid var(--m-bg); }
+.layout-banner .m-sec h2 { background: var(--m-accent); color: var(--m-on); text-align: center; padding: calc(4pt * var(--s)) 10pt calc(3.5pt * var(--s)); margin-bottom: calc(9pt * var(--s)); }
+.layout-banner .m-sethead { background: var(--m-accent); color: var(--m-on); padding: calc(4pt * var(--s)) 10pt calc(3.5pt * var(--s)); }
+.layout-banner .m-sethead h2 { background: none; padding: 0; margin: 0; text-align: left; }
+.layout-banner .m-specials h2 { margin: calc(-10pt * var(--s)) calc(-12pt * var(--s)) calc(9pt * var(--s)); }
+.layout-banner .m-note { text-align: center; }
+.layout-banner .m-foot { border-top: 2px solid var(--m-accent); }
+
+/* a featured section: a tinted panel with a bigger heading, so the page has a focal point */
+.m-feature { break-inside: avoid; background: color-mix(in srgb, var(--m-accent) 9%, var(--m-bg)); border-top: 3pt solid var(--m-accent); padding: calc(10pt * var(--s)) calc(12pt * var(--s)) calc(3pt * var(--s)); }
+.m-feature h2 { font-size: calc(10.5pt * var(--s) * var(--m-ss) * 1.35); }
+.layout-banner .m-feature { border-top: 0; padding-top: 0; }
+.layout-banner .m-feature h2 { margin: 0 calc(-12pt * var(--s)) calc(10pt * var(--s)); padding-top: calc(7pt * var(--s)); padding-bottom: calc(6pt * var(--s)); }
+
 /* borders */
 .border-thin::before, .border-double::before { content: ""; position: absolute; inset: .3in; pointer-events: none; }
 .border-thin::before { border: 1px solid var(--m-rule); }

@@ -35,6 +35,7 @@
   ];
   const PALETTES = [ // [id, name, paper, ink, muted, accent]
     ['cream', 'Cream', '#FBF8F2', '#221C18', '#6B5D52', '#8E3B24'],
+    ['tavern', 'Tavern', '#F6EFE2', '#2A1A14', '#6B5446', '#8A1F24'],
     ['paper', 'Black & white', '#FFFFFF', '#141414', '#5A5A5A', '#141414'],
     ['sage', 'Sage', '#F2F4EE', '#1E2A22', '#56645A', '#3D6B48'],
     ['harbor', 'Harbor', '#F4F3EF', '#18213A', '#5A6175', '#27467F'],
@@ -45,7 +46,16 @@
     ['forest', 'Forest', '#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'],
     ['charcoal', 'Charcoal', '#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
   ];
-  const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines']];
+  const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines'], ['banner', 'Colour bands']];
+  // Ready-made looks: one click sets fonts, colours, layout and border together.
+  const LOOKS = [
+    ['Tavern', { font: 'elegant', palette: 'tavern', layout: 'banner', border: 'double' }],
+    ['Sports bar', { font: 'bold', palette: 'charcoal', layout: 'banner', border: 'none' }],
+    ['Bistro', { font: 'classic', palette: 'cream', layout: 'leaders', border: 'thin' }],
+    ['Diner', { font: 'bold', palette: 'harbor', layout: 'banner', border: 'thin' }],
+    ['Café', { font: 'warm', palette: 'butter', layout: 'centered', border: 'none' }],
+    ['Clean modern', { font: 'modern', palette: 'paper', layout: 'left', border: 'none' }],
+  ];
   const BORDERS = [['none', 'No border'], ['thin', 'Thin frame'], ['double', 'Double frame']];
   const KINDS = [['normal', 'Regular section'], ['specials', 'Specials box'], ['set', 'Set price (prix fixe, tasting)']];
   // Starters: section headings and a look for a type of restaurant. Never dishes or prices (those are the owner's facts).
@@ -67,7 +77,7 @@
     m.pages = m.pages === 2 ? 2 : 1;
     m.qr = { url: String((m.qr && m.qr.url) || ''), label: String((m.qr && m.qr.label) || '') };
     m.sections = (m.sections || []).map((sec) => ({
-      name: '', note: '', price: '', ...sec,
+      name: '', note: '', price: '', ...sec, feature: !!sec.feature,
       kind: KINDS.some(([k]) => k === sec.kind) ? sec.kind : 'normal',
       extras: ex(sec.extras),
       items: (sec.items || []).map((it) => ({ name: '', desc: '', tags: [], ...it, prices: it.prices && it.prices.length ? it.prices : [{ label: '', amount: '' }], extras: ex(it.extras) })),
@@ -120,6 +130,14 @@
       kit.logo ? h('button', { type: 'button', class: 'iconbtn', text: 'Use a different logo for this menu', onclick: () => input.click() }) : null,
       input, status);
   }
+  // White or ink on the accent colour, whichever reads better (for the colour bands).
+  function lum(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const onAccent = (accent, ink, bg) => ['#FFFFFF', '#141414', bg, ink].sort((p, q) => contrast(q, accent) - contrast(p, accent))[0];
   function paletteOf(id) {
     if (id === 'logo' && menuLogo().colors[0]) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(menuLogo().colors[0])];
     return PALETTES.find((p) => p[0] === id) || PALETTES[0];
@@ -399,7 +417,12 @@
     if (menuLogo().colors[0]) palettes.unshift(paletteOf('logo'));
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Look' }),
-      h('p', { class: 'mhint', text: 'Every combination is designed to look good and stay easy to read.' }),
+      h('div', { class: 'choice-label', text: 'Ready-made looks' }),
+      h('div', { class: 'choices' }, LOOKS.map(([label, look]) => h('button', {
+        type: 'button', class: 'choice', 'aria-pressed': String(Object.entries(look).every(([k, v]) => menu[k] === v)),
+        onclick: () => { Object.assign(menu, look); changed(true); },
+      }, label))),
+      h('p', { class: 'mhint', text: 'Or mix your own below. Every combination is designed to look good and stay easy to read.' }),
       h('div', { class: 'choice-label', text: 'Fonts' }),
       h('div', { class: 'choices' }, FONTS.map(([id, label, family]) => choice('font', id, label, { cls: 'font-choice', style: `font-family:${family}` }))),
       h('div', { class: 'choice-label', text: 'Colours' }),
@@ -452,6 +475,7 @@
           field(sec, 'price', { id: `m-setp-${si}`, class: 'input pamount', maxlength: '16', placeholder: '95' })) : null,
         sec.kind === 'set' ? h('p', { class: 'mhint', text: 'Dishes in a set have no prices of their own. For a wine pairing, use "+ add-ons for the whole section" (e.g. Wine pairing 60).' }) : null,
         sec.kind === 'specials' ? h('p', { class: 'mhint', text: 'Prints in a box so it stands out. Good for happy hour, daily specials or a combo deal.' }) : null,
+        sec.kind === 'normal' ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: sec.feature, onchange: (e) => { sec.feature = e.target.checked; changed(); } }), 'Feature this section (coloured panel, bigger heading): best for one or two signature sections') : null,
         field(sec, 'note', { maxlength: '300', placeholder: sec.kind === 'set' ? 'Note, e.g. Five courses, served to the whole table' : 'Note under the section (optional), e.g. Served with rice', 'aria-label': 'Section note' }),
         items,
         h('div', { class: 'mrow' },
@@ -562,7 +586,7 @@
   // A section's box with its heading. `cont` = it started on the page before ("Burgers, continued").
   function sectionShell(sec, cont) {
     const name = sec.name.trim();
-    const el = h('section', { class: 'm-sec' + (sec.kind === 'specials' ? ' m-specials' : '') + (sec.kind === 'set' ? ' m-set' : '') });
+    const el = h('section', { class: 'm-sec' + (sec.kind === 'specials' ? ' m-specials' : '') + (sec.kind === 'set' ? ' m-set' : '') + (sec.feature && sec.kind === 'normal' ? ' m-feature' : '') });
     const setPrice = sec.kind === 'set' && sec.price.trim() && !cont;
     if (setPrice) {
       el.append(h('div', { class: 'm-sethead' }, h('h2', { text: name }), h('span', { class: 'm-dots', 'aria-hidden': 'true' }), h('span', { class: 'm-price', text: priceText(sec.price) })));
@@ -580,7 +604,8 @@
       if (!items.length && !sec.name.trim() && !extras) continue;
       items.forEach((it) => it.tags.forEach((t) => used.add(t)));
       const nodes = items.map((it) => itemEl(it, sec.kind === 'set'));
-      if (sec.kind !== 'normal') units.push({ sec, nodes: extras ? [...nodes, extras] : nodes });
+      // Specials, set menus and featured sections stay in one piece; regular sections can break between dishes.
+      if (sec.kind !== 'normal' || sec.feature) units.push({ sec, nodes: extras ? [...nodes, extras] : nodes });
       else {
         if (!nodes.length) units.push({ sec, nodes: [] });
         nodes.forEach((n) => units.push({ sec, nodes: [n] }));
@@ -601,6 +626,7 @@
       const page = h('div', { class: ['menu-page', menu.paper === 'a4' ? 'a4' : '', 'font-' + menu.font, 'layout-' + menu.layout, 'border-' + menu.border, i ? 'page-next' : ''].filter(Boolean).join(' ') });
       page.style.setProperty('--m-bg', bg); page.style.setProperty('--m-ink', ink);
       page.style.setProperty('--m-muted', muted); page.style.setProperty('--m-accent', accent);
+      page.style.setProperty('--m-on', onAccent(accent, ink, bg));
       if (i === 0) {
         page.append(h('header', { class: 'm-head' },
           menuLogo().logo && menu.showLogo ? h('img', { class: 'm-logo', src: menuLogo().logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
