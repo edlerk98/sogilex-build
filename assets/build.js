@@ -331,6 +331,7 @@
   }
   async function sendEdit(display, msg) {
     if (editing || building || !lastBuildId) return;
+    document.querySelectorAll('#chatlog .chat-action').forEach((b) => b.remove()); // old offers would be out of date
     const s = await session();
     if (!s) { bubble('sogilex', 'Your sign-in expired. Reload the page and sign in again.', 'err'); return; }
     const history = chat.filter((m) => !m.err).slice(-8).map(({ role, text }) => ({ role, text }));
