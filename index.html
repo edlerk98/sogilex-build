@@ -72,6 +72,11 @@
           <span class="fake-label">Logo <span class="opt">(optional)</span></span>
           <div id="logo-mount"></div>
         </div>
+        <div class="field" id="photos-field" hidden>
+          <span class="fake-label">Your photos <span class="opt">(optional)</span></span>
+          <div id="photos-mount"></div>
+          <label class="check-inline" id="use-photos-row" hidden><input type="checkbox" id="use-photos" checked> Use my photos in this site</label>
+        </div>
         <fieldset class="field">
           <legend>Style</legend>
           <div class="chips" id="styles">
@@ -176,6 +181,7 @@
       <li><b>Three free builds and 30 edits a day</b> per person while Sogilex Build is in beta. Builds or edits that fail don't count.</li>
       <li><b>Your description, and any change you ask for, is sent to Anthropic</b> to generate or edit the site. We don't keep the description. We keep each finished site and each edited version so you can reopen and publish it, with a one-line note of what each edit changed, and we record when builds happen and how long they take, to manage costs.</li>
       <li><b>Publishing (beta)</b> puts your site at <code>your-name.sogilex.net</code>. Messages sent through its contact form are stored for you and shown in Build. Published sites carry a small "Made with Sogilex" footer with a link to report abuse.</li>
+      <li><b>Your photos</b> are resized in your browser (which also removes hidden details such as where a photo was taken) and stored privately. Small previews are sent to Anthropic so Claude can place them. They become public only on a site you publish.</li>
       <li><b>Facts stay yours to fill in.</b> Build never invents prices, phone numbers, addresses or reviews. It leaves placeholders like <code>[PHONE NUMBER]</code> for you to replace.</li>
       <li><b>No logins or look-alikes.</b> Build won't make pages that imitate real companies or collect passwords or card details.</li>
       <li><b>The site is yours.</b> Use, edit and publish what you download however you like.</li>
@@ -209,6 +215,7 @@
 <script src="assets/vendor/supabase.js"></script>
 <script src="assets/sogilex-auth.js"></script>
 <script src="assets/brand.js" defer></script>
+<script src="assets/photos.js" defer></script>
 <script src="assets/build.js" defer></script>
 <script src="assets/scene.js" defer></script>
 </body>

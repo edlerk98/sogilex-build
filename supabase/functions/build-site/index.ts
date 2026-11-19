@@ -40,6 +40,40 @@ Design:
 
 const enc = new TextEncoder();
 
+// ---------- the owner's photos (same helpers as edit-site) ----------
+type Photo = { id: string; name: string; width: number | null; height: number | null };
+type Thumb = { id: string; b64: string };
+function b64(u8: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+// Read with the person's own sign-in; small previews of the newest 12 so Claude can see what each photo shows.
+// deno-lint-ignore no-explicit-any
+async function loadPhotos(supabase: any, uid: string): Promise<{ photos: Photo[]; thumbs: Thumb[] }> {
+  const { data, error } = await supabase.from("site_photos").select("id, name, width, height").order("created_at", { ascending: false }).limit(60);
+  if (error || !Array.isArray(data)) return { photos: [], thumbs: [] };
+  const photos = data as Photo[];
+  const thumbs = (await Promise.all(photos.slice(0, 12).map(async (p) => {
+    try {
+      const { data: blob } = await supabase.storage.from("site-photos").download(`${uid}/${p.id}-t.jpg`);
+      if (!blob) return null;
+      return { id: p.id, b64: b64(new Uint8Array(await blob.arrayBuffer())) };
+    } catch { return null; }
+  }))).filter(Boolean) as Thumb[];
+  return { photos, thumbs };
+}
+function photoBlocks(photos: Photo[], thumbs: Thumb[]): Anthropic.Beta.Messages.BetaContentBlockParam[] {
+  const shape = (p: Photo) => !p.width || !p.height ? "" : p.width > p.height * 1.15 ? "landscape" : p.height > p.width * 1.15 ? "portrait" : "square";
+  const lines = photos.map((p) => `- sogilex:photo:${p.id} · ${p.name ? `"${p.name.replace(/["<>]/g, "")}"` : "no name"}${shape(p) ? " · " + shape(p) : ""}${thumbs.some((t) => t.id === p.id) ? " · preview below" : ""}`);
+  const blocks: Anthropic.Beta.Messages.BetaContentBlockParam[] = [{ type: "text", text: `<photos>\nThe owner's photos (names are the owner's own words):\n${lines.join("\n")}\n</photos>` }];
+  for (const t of thumbs) {
+    blocks.push({ type: "text", text: `Preview of sogilex:photo:${t.id}:` });
+    blocks.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: t.b64 } });
+  }
+  return blocks;
+}
+
 // Strip anything before <!doctype / <html and after </html>, in case the model adds stray text.
 function cleanHtml(text: string): string {
   const start = text.search(/<!doctype html|<html/i);
@@ -85,13 +119,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (userError || !userData?.user) return json({ error: "Your sign-in has expired. Sign in again." }, 401, cors);
 
   // 2. Validate the request.
-  let body: { description?: unknown; name?: unknown; style?: unknown; accent?: unknown; logo?: unknown; logo_colors?: unknown };
+  let body: { description?: unknown; name?: unknown; style?: unknown; accent?: unknown; logo?: unknown; logo_colors?: unknown; use_photos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "Send JSON." }, 400, cors); }
   const description = typeof body.description === "string" ? body.description.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
   const style = STYLES.includes(body.style as typeof STYLES[number]) ? (body.style as string) : "clean";
   const accent = typeof body.accent === "string" && /^#[0-9a-fA-F]{6}$/.test(body.accent) ? body.accent : "";
   const hasLogo = body.logo === true;
+  const usePhotos = body.use_photos === true;
   const logoColors = Array.isArray(body.logo_colors) ? body.logo_colors.filter((c) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 4) : [];
   if (description.length < 10) return json({ error: "Describe the site in a sentence or two (at least 10 characters)." }, 400, cors);
   if (description.length > 1500) return json({ error: "Keep the description under 1,500 characters." }, 400, cors);
@@ -118,6 +153,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { data: buildId, error: slotError } = await supabase.rpc("claim_build_slot");
   if (slotError || !buildId) return json({ error: slotError?.message ?? "Couldn't start a build." }, 429, cors);
 
+  const { photos, thumbs } = usePhotos ? await loadPhotos(supabase, userData.user.id) : { photos: [], thumbs: [] };
   const request = [
     `<request>${description}</request>`,
     name ? `Site or business name: ${name}` : "No name given: use a short placeholder like [SITE NAME].",
@@ -125,6 +161,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     accent ? `Accent colour: ${accent}.` : "Accent colour: your choice, to suit the style.",
     hasLogo ? "The business has its own logo. Show it in the header (and, if it suits, the footer) with exactly this tag: <img src=\"sogilex:logo\" alt=\"" + (name || "Business").replace(/"/g, "") + " logo\">, sized with CSS (about 40 to 64px tall, width auto). Don't draw, describe or invent any other logo or wordmark." : "",
     logoColors.length ? `Brand colours taken from the logo: ${logoColors.join(", ")}. Build the palette around them, keeping WCAG AA contrast.` : "",
+    photos.length ? "The owner's own photos are listed in <photos>, with previews so you can see what each one shows. Use them where they suit the site, for example a large photo at the top, a gallery or an about section; you don't have to use all of them. Show a photo only with its exact tag: <img src=\"sogilex:photo:ID\" alt=\"what the photo shows\">, or url('sogilex:photo:ID') in CSS. Use each photo at most once, size photos with CSS (for example object-fit: cover) so they work on phones, and keep any text on top of a photo readable. These are the only photos you may use: draw nothing that pretends to be a photo." : "",
   ].filter(Boolean).join("\n");
 
   const anthropic = new Anthropic({ apiKey });
@@ -152,7 +189,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
           system: SYSTEM,
-          messages: [{ role: "user", content: request }],
+          messages: [{ role: "user", content: photos.length ? [...photoBlocks(photos, thumbs), { type: "text", text: request }] : request }],
         });
         timer = setTimeout(() => { timedOut = true; stream.abort(); }, Math.max(0, DEADLINE_MS - (Date.now() - startedAt)));
         for await (const event of stream) {

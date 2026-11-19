@@ -226,3 +226,25 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .edit-form textarea { min-height: 64px; resize: vertical; }
 .edit-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .edit-row #undo { margin-right: auto; }
+
+/* Your photos */
+.photo-drop { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; width: 100%; min-height: 84px; padding: 14px; border: 2px dashed var(--ctl); border-radius: 14px; background: rgba(18, 10, 24, .45); color: var(--text); font: 14px var(--body); cursor: pointer; text-align: center; }
+.photo-drop strong { font-size: 16px; font-weight: 600; }
+.photo-drop span { color: var(--mute); font-size: 13px; }
+.photo-drop:hover, .photo-drop.over { border-color: var(--lime); }
+.photo-drop:disabled { opacity: .6; cursor: progress; }
+.photo-count { display: block; margin-top: 8px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--mute); }
+.photo-count:empty { display: none; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 10px; margin-top: 8px; }
+.photo-grid:empty { display: none; }
+.photo { position: relative; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #1A1120; display: block; }
+.photo-x { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .35); background: rgba(18, 10, 24, .8); color: #fff; font-size: 13px; cursor: pointer; }
+.photo-x:hover { border-color: var(--warn); color: var(--warn); }
+.photo-name.input { min-height: 36px; padding: 6px 8px; font-size: 13px; }
+.photo-status { margin: 6px 0 0; font-size: 13px; color: var(--mute); }
+.photo-status:empty { display: none; }
+.photo-status.err { color: var(--warn); }
+.photo-hint { margin: 6px 0 0; font-size: 12.5px; color: var(--mute); line-height: 1.45; }
+#use-photos-row { margin-top: 8px; }
+.photo-drop:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }

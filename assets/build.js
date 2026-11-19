@@ -19,7 +19,17 @@
   let kit = { logo: null, logo_name: null, colors: [] }; // brand kit: logo + its colours
   const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
   // Generated sites refer to the logo as src="sogilex:logo"; swap in the real image wherever the site is shown or saved.
-  const withLogo = (text) => text.split('sogilex:logo').join(kit.logo || BLANK_PNG);
+  // Photos are sogilex:photo:<id>; the preview uses private links, a downloaded file gets the photos inside it.
+  let photoBox = null;
+  const photoLinks = () => (photoBox ? photoBox.links : {});
+  const withLogo = (text) => {
+    const t = text.split('sogilex:logo').join(kit.logo || BLANK_PNG);
+    return window.SogilexPhotos ? SogilexPhotos.fill(t, photoLinks()) : t;
+  };
+  const forFile = async (text) => {
+    const t = text.split('sogilex:logo').join(kit.logo || BLANK_PNG);
+    return window.SogilexPhotos ? SogilexPhotos.inline(t, photoLinks()) : t;
+  };
   let lastBuildId = null; // set when a build finishes; publishing uses it
   let builtOk = false;
   let siteName = '';
@@ -69,6 +79,17 @@
     $('logo-field').hidden = false;
     SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); if (html) paint(true); } });
     logoSwatches();
+    loadPhotos(uid);
+  }
+  function loadPhotos(uid) {
+    if (!window.SogilexPhotos) return;
+    $('photos-field').hidden = false;
+    photoBox = SogilexPhotos.mount($('photos-mount'), {
+      db, uid,
+      onChange: (photos) => { $('use-photos-row').hidden = !photos.length; if (html) paint(true); },
+    });
+    // Preview links last an hour: renew them before they run out.
+    setInterval(() => { if (photoBox) photoBox.refresh(true); }, 40 * 60 * 1000);
   }
   // The logo's colours appear first among the accent presets.
   function logoSwatches() {
@@ -380,6 +401,7 @@
           accent: $('accent-auto').checked ? '' : $('accent').value,
           logo: !!kit.logo,
           logo_colors: kit.logo ? (kit.colors || []) : [],
+          use_photos: !!(photoBox && photoBox.photos.length && $('use-photos').checked),
         }),
       });
       if (!res.ok || !res.body) {
@@ -428,15 +450,15 @@
   });
 
   // ---------- results ----------
-  $('download').addEventListener('click', () => {
+  $('download').addEventListener('click', async () => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([withLogo(html)], { type: 'text/html' }));
+    a.href = URL.createObjectURL(new Blob([await forFile(html)], { type: 'text/html' }));
     a.download = `${slug(siteName)}.html`;
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
   $('copy').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(withLogo(html)); $('copy').textContent = 'Copied'; }
+    try { await navigator.clipboard.writeText(await forFile(html)); $('copy').textContent = 'Copied'; }
     catch { $('copy').textContent = 'Copy failed'; }
     setTimeout(() => { $('copy').textContent = 'Copy code'; }, 1800);
   });

@@ -3,6 +3,7 @@
 //   name.sogilex.net        serves a published site from KV (key "site:<name>"), with a strict
 //                           Content-Security-Policy: no scripts, nothing loaded from elsewhere.
 //   name.sogilex.net/__form receives the site's contact form and stores it through Supabase.
+//   name.sogilex.net/photos/<id>.jpg  the owner's photos that the site uses, copied to KV when it's published.
 //   api.sogilex.net         publish / unpublish, called by build.sogilex.com with the person's sign-in.
 //   sogilex.net, www        redirect to sogilex.com.
 //
@@ -16,7 +17,7 @@ const BUILD_ORIGIN = 'https://build.sogilex.com';
 
 const SITE_HEADERS = {
   'Content-Type': 'text/html; charset=utf-8',
-  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; sandbox allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation",
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; sandbox allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
@@ -37,6 +38,8 @@ export default {
       if (req.method !== 'POST') return Response.redirect(url.origin + '/', 303);
       return form(req, env, slug, url);
     }
+    const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
+    if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
     if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
     if (url.pathname !== '/' && url.pathname !== '/index.html') return Response.redirect(url.origin + '/', 302);
@@ -83,14 +86,15 @@ async function api(req, env, url) {
       let body;
       try { body = await req.json(); } catch { return json({ error: 'Send JSON.' }, 400); }
       const result = await rpc(env, 'publish_site', { p_build_id: String(body.build_id || ''), p_slug: String(body.slug || '') }, token);
-      const html = await prepare(result.html, result.slug, result.logo);
+      const withPhotos = await copyPhotos(env, token, result.slug, result.html);
+      const html = await prepare(withPhotos, result.slug, result.logo);
       await env.SITES.put('site:' + result.slug, html);
-      if (result.old_slug) await env.SITES.delete('site:' + result.old_slug);
+      if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); }
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
     }
     if (url.pathname === '/unpublish') {
       const slug = await rpc(env, 'unpublish_site', {}, token);
-      if (slug) await env.SITES.delete('site:' + slug);
+      if (slug) { await env.SITES.delete('site:' + slug); await dropPhotos(env, slug, []); }
       return json({ ok: true, slug: slug || null });
     }
     return json({ error: 'Not found.' }, 404);
@@ -98,6 +102,61 @@ async function api(req, env, url) {
     const status = err.status === 401 ? 401 : 400;
     return json({ error: status === 401 ? 'Your sign-in has expired. Sign in again.' : err.message }, status);
   }
+}
+
+// ---------- the owner's photos ----------
+// Build pages refer to photos as sogilex:photo:<id>. When a site is published, the photos it uses are read from
+// the owner's private Storage folder with their own sign-in, copied to KV ("photo:<site>:<id>") and the page is
+// pointed at /photos/<id>.jpg on the site's own address. "photos:<site>" lists them, so a republish or unpublish
+// can remove the ones no longer used. Photos that were deleted are left out (a blank image takes their place).
+const PHOTO_TAG = /sogilex:photo:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+const MAX_SITE_PHOTOS = 40; // each copy is one fetch; Workers allow 50 per request
+
+async function copyPhotos(env, token, slug, html) {
+  const ids = [...new Set([...html.matchAll(PHOTO_TAG)].map((m) => m[1]))].slice(0, MAX_SITE_PHOTOS);
+  const kept = [];
+  if (ids.length) {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${ids.join(',')})`, {
+      headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
+    });
+    const rows = res.ok ? await res.json() : [];
+    await Promise.all(rows.map(async (r) => {
+      const file = await fetch(`${env.SUPABASE_URL}/storage/v1/object/authenticated/site-photos/${r.user_id}/${r.id}.jpg`, {
+        headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
+      });
+      if (!file.ok) return;
+      const bytes = await file.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > 3 * 1024 * 1024) return;
+      await env.SITES.put(`photo:${slug}:${r.id}`, bytes);
+      kept.push(r.id);
+    }));
+  }
+  await dropPhotos(env, slug, kept);
+  await env.SITES.put('photos:' + slug, JSON.stringify(kept));
+  return html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG));
+}
+
+// Remove a site's copied photos, except the ones in `keep`.
+async function dropPhotos(env, slug, keep) {
+  let old = [];
+  try { old = JSON.parse((await env.SITES.get('photos:' + slug)) || '[]'); } catch { /* none */ }
+  await Promise.all(old.filter((id) => !keep.includes(id)).map((id) => env.SITES.delete(`photo:${slug}:${id}`)));
+  if (!keep.length) await env.SITES.delete('photos:' + slug);
+}
+
+async function servePhoto(env, slug, id, method) {
+  const bytes = await env.SITES.get(`photo:${slug}:${id}`, 'arrayBuffer');
+  if (!bytes) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
+  return new Response(method === 'HEAD' ? null : bytes, {
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': String(bytes.byteLength),
+      'Cache-Control': 'public, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+    },
+  });
 }
 
 // ---------- making a generated page safe to host ----------

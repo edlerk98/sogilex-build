@@ -19,7 +19,13 @@ with Sogilex sign-in).
   honeypot field and the "Made with Sogilex · Report this site" footer.
 - Logos: Build writes `<img src="sogilex:logo">`; at publish time the Worker swaps in the owner's logo from
   `brand_kits` (a PNG data URL), or removes the tag if there is none.
-- Served with a Content-Security-Policy that blocks all scripts and outside loads, plus a sandbox.
+- Photos (2026-11-19): Build writes `sogilex:photo:<id>` (in `<img>` or CSS). At publish time the Worker looks the
+  ids up in `site_photos` with the owner's own sign-in (so only their own photos), downloads each from the private
+  `site-photos` bucket, stores it in KV as `photo:<name>:<id>` (list in `photos:<name>`), and points the page at
+  `/photos/<id>.jpg`. Deleted or someone else's photos become a blank image. Republish drops copies no longer used;
+  unpublish drops all. At most 40 photos per site (Workers allow 50 fetches per request).
+- Served with a Content-Security-Policy that blocks all scripts and outside loads (images only from the site itself
+  or data: URLs), plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).
 
 ## Deploying the Worker

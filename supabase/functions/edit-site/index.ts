@@ -29,7 +29,9 @@ Rules for the page (the same rules it was built with):
 - Nothing loaded from other domains: no web fonts, CDNs, external images or scripts. Use system fonts, CSS and inline SVG.
 - Keep every <img src="sogilex:logo"> tag: it is the owner's logo, filled in later.
 - Keep it responsive from 360px wide, with WCAG AA contrast and visible focus styles.
-- The owner can't upload photos or files yet. If they ask to add their own photos, say that adding their own photos is coming soon, and offer a placeholder area instead.
+- The owner's own photos, if they have any, are listed in <photos>, with small previews so you can see what each one shows. Add or move a photo only when the owner asks for it. Show a photo only with its exact tag: <img src="sogilex:photo:ID" alt="what the photo shows">, or url('sogilex:photo:ID') in CSS. Use no other photos or images. Size photos with CSS (for example object-fit: cover) so they fit the layout on phones too.
+- If they ask for their photos and none are listed, tell them to add photos in the "Your photos" box next to the description, then ask again. Don't add empty photo frames unless they ask for them.
+- The owner can't upload other files (videos, PDFs, documents).
 
 Facts:
 - Use facts the owner gives you (prices, phone numbers, addresses, hours, names, wording) exactly as they wrote them.
@@ -86,12 +88,53 @@ const looksLikePage = (h: string) => h.length >= 1500 && /<html[\s>]/i.test(h) &
 // Scripts never belong in a Sogilex page (published sites strip them anyway); refuse a version that adds any.
 const scriptCount = (h: string) => (h.match(/<script\b|\son[a-z]+\s*=|javascript:/gi) ?? []).length;
 
+const PHOTO_TAG = /sogilex:photo:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+export const photoIdsIn = (h: string) => new Set([...h.matchAll(PHOTO_TAG)].map((m) => m[1]));
+
 // Check a proposed new page against the old one. Returns a problem in plain words, or null if it's fine.
-export function checkPage(oldHtml: string, newHtml: string): string | null {
+export function checkPage(oldHtml: string, newHtml: string, photoIds: Set<string> = new Set()): string | null {
   if (!looksLikePage(newHtml)) return "The result isn't a complete page.";
   if (newHtml.length > MAX_HTML) return "The page would be too large.";
   if (scriptCount(newHtml) > scriptCount(oldHtml)) return "The result added scripts, which Sogilex pages can't have.";
+  const before = photoIdsIn(oldHtml);
+  const unknown = [...photoIdsIn(newHtml)].filter((id) => !photoIds.has(id) && !before.has(id));
+  if (unknown.length) return `The result uses photo tags that aren't the owner's photos (${unknown.join(", ")}). Use only the tags listed in <photos>.`;
   return null;
+}
+
+export type Photo = { id: string; name: string; width: number | null; height: number | null };
+export type Thumb = { id: string; b64: string };
+function b64(u8: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+// The owner's photos (read with their own sign-in) and small previews of the newest 12 for Claude to look at.
+// deno-lint-ignore no-explicit-any
+export async function loadPhotos(supabase: any, uid: string): Promise<{ photos: Photo[]; thumbs: Thumb[] }> {
+  const { data, error } = await supabase.from("site_photos").select("id, name, width, height").order("created_at", { ascending: false }).limit(60);
+  if (error || !Array.isArray(data)) return { photos: [], thumbs: [] };
+  const photos = data as Photo[];
+  const thumbs = (await Promise.all(photos.slice(0, 12).map(async (p) => {
+    try {
+      const { data: blob } = await supabase.storage.from("site-photos").download(`${uid}/${p.id}-t.jpg`);
+      if (!blob) return null;
+      return { id: p.id, b64: b64(new Uint8Array(await blob.arrayBuffer())) };
+    } catch { return null; }
+  }))).filter(Boolean) as Thumb[];
+  return { photos, thumbs };
+}
+// The photo list and previews as message content: a <photos> list, then each preview labelled with its tag.
+export function photoBlocks(photos: Photo[], thumbs: Thumb[]): Anthropic.Beta.Messages.BetaContentBlockParam[] {
+  if (!photos.length) return [{ type: "text", text: "<photos>\nThe owner hasn't added any photos.\n</photos>" }];
+  const shape = (p: Photo) => !p.width || !p.height ? "" : p.width > p.height * 1.15 ? "landscape" : p.height > p.width * 1.15 ? "portrait" : "square";
+  const lines = photos.map((p) => `- sogilex:photo:${p.id} · ${p.name ? `"${p.name.replace(/["<>]/g, "")}"` : "no name"}${shape(p) ? " · " + shape(p) : ""}${thumbs.some((t) => t.id === p.id) ? " · preview below" : ""}`);
+  const blocks: Anthropic.Beta.Messages.BetaContentBlockParam[] = [{ type: "text", text: `<photos>\nThe owner's photos (names are the owner's own words):\n${lines.join("\n")}\n</photos>` }];
+  for (const t of thumbs) {
+    blocks.push({ type: "text", text: `Preview of sogilex:photo:${t.id}:` });
+    blocks.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: t.b64 } });
+  }
+  return blocks;
 }
 
 export function buildRequest(html: string, message: string, history: { role: string; text: string }[]): string {
@@ -127,8 +170,10 @@ function json(body: Record<string, unknown>, status: number, cors: Record<string
 }
 
 // One call to Claude, plus at most one follow-up if some edits didn't match the page.
-export async function runEdit(anthropic: Anthropic, html: string, message: string, history: { role: string; text: string }[], signal: AbortSignal) {
-  const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [{ role: "user", content: buildRequest(html, message, history) }];
+export async function runEdit(anthropic: Anthropic, html: string, message: string, history: { role: string; text: string }[], signal: AbortSignal,
+  photos: Photo[] = [], thumbs: Thumb[] = []) {
+  const photoIds = new Set(photos.map((p) => p.id));
+  const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [{ role: "user", content: [...photoBlocks(photos, thumbs), { type: "text", text: buildRequest(html, message, history) }] }];
   let inTokens = 0; let outTokens = 0; let stop: string | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const stream = anthropic.beta.messages.stream({
@@ -151,7 +196,7 @@ export async function runEdit(anthropic: Anthropic, html: string, message: strin
     let next: string; let problems: string[] = [];
     if (answer.rewrite.trim()) next = cleanHtml(answer.rewrite);
     else ({ html: next, problems } = applyEdits(html, answer.edits));
-    const bad = problems.length ? null : checkPage(html, next);
+    const bad = problems.length ? null : checkPage(html, next, photoIds);
     if (!problems.length && !bad) return { reply: answer.reply, html: next, inTokens, outTokens, stop };
     if (attempt === 1) return { error: "That edit didn't apply cleanly. Please try again, maybe in smaller steps.", inTokens, outTokens, stop: "edits_failed" };
     // Tell Claude what went wrong, once. Pass its whole turn back unchanged (it may hold thinking blocks).
@@ -201,6 +246,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { data: editId, error: slotError } = await supabase.rpc("claim_edit_slot", { p_parent: parentId });
   if (slotError || !editId) return json({ error: slotError?.message ?? "Couldn't start the edit." }, 429, cors);
 
+  const { photos, thumbs } = await loadPhotos(supabase, userData.user.id);
   const anthropic = new Anthropic({ apiKey });
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -211,7 +257,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let ok = false; let note: string | null = null;
       let inTokens: number | null = null; let outTokens: number | null = null; let stop: string | null = null;
       try {
-        const r = await runEdit(anthropic, html, message, history, abort.signal);
+        const r = await runEdit(anthropic, html, message, history, abort.signal, photos, thumbs);
         inTokens = r.inTokens; outTokens = r.outTokens; stop = r.stop;
         if ("error" in r && r.error) {
           controller.enqueue(line({ t: "error", message: r.error + " This one didn't count toward your daily edits." }));
