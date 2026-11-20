@@ -28,6 +28,7 @@
   const money = (c) => { c = Number(c) || 0; const neg = c < 0; c = Math.abs(c); return `${neg ? '−' : ''}$${Math.floor(c / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${String(c % 100).padStart(2, '0')}`; };
   const isoToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const SHOW = 6; // items shown per section before "Show all"
+  let uidNow = null;
 
   // Runs one query; a failure shows in its own section instead of breaking the page.
   async function get(fn) { try { const r = await within(fn(), 12000); if (r.error) throw r.error; return { ok: true, data: r.data }; } catch { return { ok: false, data: null }; } }
@@ -49,7 +50,8 @@
           h('span', { class: 'acct-row-title', text: it.title }),
           h('span', { class: 'acct-row-sub', text: it.sub })),
         it.badge ? h('span', { class: `acct-badge ${it.badgeClass || ''}`, text: it.badge }) : null,
-        h('a', { class: 'btn btn-secondary acct-open', href: it.href, 'aria-label': `Open ${it.title}`, text: 'Open' }));
+        h('a', { class: 'btn btn-secondary acct-open', href: it.href, 'aria-label': `Open ${it.title}`, text: 'Open' }),
+        it.del ? h('button', { type: 'button', class: 'iconbtn danger acct-delbtn', 'aria-label': `Delete ${it.title}`, text: 'Delete', onclick: (e) => removeItem(e.currentTarget, li, it) }) : null);
       return li;
     }));
     const out = [ul];
@@ -61,6 +63,26 @@
     }
     return out;
   }
+  // Delete one thing, after asking. The row disappears and the counts go down; a refusal is shown as is.
+  async function removeItem(btn, li, it) {
+    if (!confirm(it.confirm || `Delete "${it.title}"? This can't be undone.`)) return;
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      await it.del();
+      const sec = li.closest('.acct-sec'); const cnt = sec && sec.querySelector('.acct-count');
+      li.remove();
+      if (cnt) cnt.textContent = String(Math.max(0, Number(cnt.textContent) - 1));
+      const sum = $('acct-load'); const m = /^(\d+)/.exec(sum.textContent);
+      if (m) { const n = Number(m[1]) - 1; sum.textContent = n ? `${n} thing${n === 1 ? '' : 's'} saved to your account.` : 'Nothing saved yet. Everything you make in any tool shows up here.'; }
+      const ul = sec && sec.querySelector('.acct-list');
+      if (ul && !ul.children.length) ul.replaceWith(h('p', { class: 'muted acct-empty', text: 'Nothing here now.' }));
+      else if (ul) { [...ul.children].forEach((x, i) => x.classList.toggle('acct-more', i >= SHOW)); }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Delete';
+      alert((e && e.message && !/fetch|network|timeout/i.test(e.message)) ? e.message : "Couldn't delete it. Check your connection and try again.");
+    }
+  }
+  const must = async (p) => { const r = await within(p, 12000); if (r.error) throw r.error; return r; };
   const newBtn = (href, text) => h('a', { class: 'btn btn-secondary acct-new', href, text });
 
   function websites(builds, site) {
@@ -71,12 +93,14 @@
       sub: `${b.kind === 'edit' ? `Changed: ${b.note || 'edited'}` : 'Built'} · ${day(b.created_at)}`,
       badge: b.live ? 'Published' : null, badgeClass: 'b-live',
       href: `../?open=${encodeURIComponent(b.build_id)}`,
+      del: b.live ? null : () => must(db.rpc('delete_my_build', { p_id: b.build_id })),
+      confirm: `Delete this version of "${decode(b.title) || 'Untitled site'}" from ${day(b.created_at)}? Your other versions stay. This can't be undone.`,
     }));
     const slug = site.ok && site.data && site.data.slug;
     return section('sites', 'Websites', list.length, [
       slug ? h('p', { class: 'acct-note' }, 'Published at ', h('a', { href: `https://${slug}.sogilex.net/`, target: '_blank', rel: 'noopener', text: `${slug}.sogilex.net` }),
         site.data.messages ? ` · ${site.data.messages} message${site.data.messages === 1 ? '' : 's'} from its contact form (read them in Build)` : '') : null,
-      list.length ? h('p', { class: 'muted acct-hint', text: 'Every version is kept, newest first. Opening one shows it in Build, where you can change it, download it or publish it.' }) : null,
+      list.length ? h('p', { class: 'muted acct-hint', text: 'Every version is kept, newest first. Opening one shows it in Build, where you can change it, download it or publish it. The published version can\'t be deleted until you unpublish it in Build.' }) : null,
       rows(items, 'No websites yet.'),
     ], newBtn('../', 'Build a website'));
   }
@@ -85,8 +109,10 @@
     if (!m.ok) return section('menu', 'Menu', null, h('p', { class: 'muted', text: "Couldn't load your menu. Refresh to try again." }));
     const d = m.data && m.data.data;
     const dishes = d && Array.isArray(d.sections) ? d.sections.reduce((n, s) => n + ((s.items || []).filter((i) => (i.name || '').trim()).length), 0) : 0;
-    const items = d ? [{ title: (d.name || '').trim() || 'Your menu', sub: `${d.sections.length} section${d.sections.length === 1 ? '' : 's'} · ${dishes} dish${dishes === 1 ? '' : 'es'} · saved ${day(m.data.updated_at)}`, href: '../menus/' }] : [];
     const slug = online.ok && online.data && online.data.slug;
+    const items = d ? [{ title: (d.name || '').trim() || 'Your menu', sub: `${d.sections.length} section${d.sections.length === 1 ? '' : 's'} · ${dishes} dish${dishes === 1 ? '' : 'es'} · saved ${day(m.data.updated_at)}`, href: '../menus/',
+      del: async () => { if (slug) await must(db.rpc('unpublish_menu')); await must(db.from('menus').delete().eq('user_id', m.data.user_id || uidNow)); },
+      confirm: `Delete your menu${d.name ? ` "${d.name}"` : ''}? ${slug ? 'Your online menu turns off too, so its QR code will stop working. ' : ''}Printed copies aren't affected. This can't be undone.` }] : [];
     return section('menu', 'Menu', null, [
       slug ? h('p', { class: 'acct-note' }, 'Online menu: ', h('a', { href: `https://${slug}.sogilex.net/menu`, target: '_blank', rel: 'noopener', text: `${slug}.sogilex.net/menu` })) : null,
       rows(items, 'No menu yet.'),
@@ -99,7 +125,8 @@
     const items = list.map((r) => {
       const d = r.data || {};
       const size = { letter: 'Letter', a4: 'A4', square: 'Square', story: 'Story' }[d.size] || '';
-      return { title: (d.headline || '').trim() || `Untitled ${noun}`, sub: [size, `saved ${day(r.updated_at)}`].filter(Boolean).join(' · '), href: `../${path}/?open=${encodeURIComponent(r.id)}` };
+      return { title: (d.headline || '').trim() || `Untitled ${noun}`, sub: [size, `saved ${day(r.updated_at)}`].filter(Boolean).join(' · '), href: `../${path}/?open=${encodeURIComponent(r.id)}`,
+        del: () => must(db.from(path).delete().eq('id', r.id)) };
     });
     return section(id, title, list.length, rows(items, `No ${noun}s yet.`), newBtn(`../${path}/`, `Make a ${noun}`));
   }
@@ -120,12 +147,15 @@
     const items = list.map((r) => {
       const [badge, badgeClass] = label(r);
       const who = r.data && r.data.to && r.data.to.name ? r.data.to.name : 'No customer yet';
-      return { title: `${r.kind === 'invoice' ? 'Invoice' : 'Quote'} ${num(r)} · ${who}`, sub: `${money(r.total_cents)} · ${day(r.updated_at)}`, badge, badgeClass, href: `../invoices/?open=${encodeURIComponent(r.id)}` };
+      return { title: `${r.kind === 'invoice' ? 'Invoice' : 'Quote'} ${num(r)} · ${who}`, sub: `${money(r.total_cents)} · ${day(r.updated_at)}`, badge, badgeClass, href: `../invoices/?open=${encodeURIComponent(r.id)}`,
+        del: r.status === 'draft' ? () => must(db.from('inv_docs').delete().eq('id', r.id).eq('status', 'draft')) : null,
+        confirm: `Delete this draft ${r.kind} for ${who}? This can't be undone.` };
     });
     const unpaid = list.filter((r) => r.kind === 'invoice' && r.status === 'sent');
     const owed = unpaid.reduce((a, r) => a + Number(r.total_cents), 0);
     return section('inv', 'Quotes & invoices', list.length, [
       unpaid.length ? h('p', { class: 'acct-note', text: `Unpaid: ${money(owed)} across ${unpaid.length} invoice${unpaid.length === 1 ? '' : 's'}.` }) : null,
+      list.length ? h('p', { class: 'muted acct-hint', text: 'Only drafts can be deleted. Sent quotes and invoices stay for your records; to undo an invoice, open it and cancel it.' }) : null,
       rows(items, 'No quotes or invoices yet.'),
     ], newBtn('../invoices/', 'Make an invoice'));
   }
@@ -175,11 +205,11 @@
       return;
     }
     $('signout').hidden = false; $('pwbtn').hidden = false; $('account').hidden = false;
-    const uid = s.user.id;
+    const uid = s.user.id; uidNow = uid;
     const [builds, site, m, online, flyers, posts, docs, photos, mail, kit] = await Promise.all([
       get(() => db.rpc('my_builds')),
       get(() => db.rpc('my_site')),
-      get(() => db.from('menus').select('data, updated_at').eq('user_id', uid).maybeSingle()),
+      get(() => db.from('menus').select('user_id, data, updated_at').eq('user_id', uid).maybeSingle()),
       get(() => db.rpc('my_online_menu')),
       get(() => db.from('flyers').select('id, data, updated_at').order('updated_at', { ascending: false })),
       get(() => db.from('posts').select('id, data, updated_at').order('updated_at', { ascending: false })),

@@ -49,3 +49,5 @@
   .acct-row { flex-wrap: wrap; }
   .acct-row-main { flex-basis: 100%; }
 }
+.acct-delbtn { min-height: 40px; flex: none; }
+.acct-delbtn:disabled { opacity: .6; cursor: progress; }
