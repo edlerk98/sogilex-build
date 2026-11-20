@@ -520,6 +520,7 @@
         : POSTS ? 'Fits. Use Save image, then post it.'
           : flyer.size === 'square' ? 'Fits. Square is for Instagram and Facebook posts: use Save image.' : 'Fits on one page.';
     $('size').value = flyer.size;
+    prepareShare();
     if ($('page-size')) $('page-size').textContent = `@page { size: ${flyer.size === 'a4' ? 'A4' : flyer.size === 'square' ? '8in 8in' : 'letter'}; margin: 0; }`;
     scalePreview();
   }
@@ -561,37 +562,82 @@
     }
     return pageCss;
   }
+  // Draws the post or flyer as a PNG (the same picture for Save image and Share).
+  async function makeImage() {
+    renderPreview();
+    const live = $('sheets').firstChild;
+    const node = live.cloneNode(true);
+    const w = live.offsetWidth; const hgt = live.offsetHeight;
+    const target = flyer.size === 'square' || flyer.size === 'story' ? 1080 : Math.round(w / 96 * 150);
+    const k = target / w;
+    const css = (await fontCss()) + (await flyerCss());
+    // An image drawn this way can't load anything from elsewhere: put the photo inside it.
+    for (const im of node.querySelectorAll('img')) {
+      if (/^https?:/.test(im.src)) im.src = await toDataUrl(await (await fetch(im.src)).blob());
+    }
+    const xhtml = new XMLSerializer().serializeToString(node);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * k}" height="${hgt * k}" viewBox="0 0 ${w} ${hgt}"><foreignObject x="0" y="0" width="${w}" height="${hgt}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/</g, '\\3c ')}</style>${xhtml}</div></foreignObject></svg>`;
+    const img = new Image();
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    await img.decode();
+    await new Promise((r) => setTimeout(r, 150)); // give embedded fonts a moment
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(w * k); canvas.height = Math.round(hgt * k);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise((res, rej) => canvas.toBlob((bl) => (bl ? res(bl) : rej(new Error('no image'))), 'image/png'));
+  }
+  const imageName = () => `${(flyer.headline.trim() || NOUN).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || NOUN}-${flyer.size}.png`;
   async function saveImage() {
     const btn = $('saveimg');
     btn.disabled = true; const was = btn.textContent; btn.textContent = 'Making image…';
     try {
-      renderPreview();
-      const live = $('sheets').firstChild;
-      const node = live.cloneNode(true);
-      const w = live.offsetWidth; const hgt = live.offsetHeight;
-      const target = flyer.size === 'square' || flyer.size === 'story' ? 1080 : Math.round(w / 96 * 150);
-      const k = target / w;
-      const css = (await fontCss()) + (await flyerCss());
-      // An image drawn this way can't load anything from elsewhere: put the photo inside it.
-      for (const im of node.querySelectorAll('img')) {
-        if (/^https?:/.test(im.src)) im.src = await toDataUrl(await (await fetch(im.src)).blob());
-      }
-      const xhtml = new XMLSerializer().serializeToString(node);
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * k}" height="${hgt * k}" viewBox="0 0 ${w} ${hgt}"><foreignObject x="0" y="0" width="${w}" height="${hgt}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/</g, '\\3c ')}</style>${xhtml}</div></foreignObject></svg>`;
-      const img = new Image();
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-      await img.decode();
-      await new Promise((r) => setTimeout(r, 150)); // give embedded fonts a moment
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(w * k); canvas.height = Math.round(hgt * k);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise((res, rej) => canvas.toBlob((bl) => (bl ? res(bl) : rej(new Error('no image'))), 'image/png'));
-      const a = h('a', { href: URL.createObjectURL(blob), download: `${(flyer.headline.trim() || 'flyer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'flyer'}-${flyer.size}.png` });
+      const blob = await makeImage();
+      const a = h('a', { href: URL.createObjectURL(blob), download: imageName() });
       document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     } catch {
       alert("This browser couldn't make the image. Try Chrome or Edge, or use Print or save PDF instead.");
     } finally { btn.disabled = false; btn.textContent = was; }
+  }
+
+  // ---------- Share (Posts, on phones) ----------
+  // Opens the phone's share menu with the image, so it goes straight into Instagram, Facebook or a message, and copies
+  // the caption first (Instagram and Facebook don't take a caption from another app: it's pasted in).
+  // A share menu only opens straight after a tap, so the image is made ahead of time, a moment after each change.
+  const canShareFiles = (() => {
+    try { return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [new File([new Blob(['x'], { type: 'image/png' })], 'x.png', { type: 'image/png' })] })); } catch { return false; }
+  })();
+  let ready = null; let readyKey = ''; let makingKey = ''; let readyTimer = null;
+  const shareKey = () => JSON.stringify([flyer, kit.logo ? kit.logo.length : 0, flyer.photo ? photoUrl(flyer.photo) : '']);
+  function prepareShare() {
+    if (!canShareFiles || !$('share')) return;
+    clearTimeout(readyTimer);
+    readyTimer = setTimeout(async () => {
+      const key = shareKey();
+      if (key === readyKey || key === makingKey) return;
+      makingKey = key;
+      try { const blob = await makeImage(); if (shareKey() === key) { ready = blob; readyKey = key; } } catch { /* made again on tap */ }
+      makingKey = '';
+    }, 900);
+  }
+  async function share() {
+    const fit = $('fit');
+    const caption = (flyer.caption || '').trim();
+    const copied = caption && navigator.clipboard ? navigator.clipboard.writeText(caption).then(() => true, () => false) : Promise.resolve(false);
+    let blob = shareKey() === readyKey ? ready : null;
+    if (!blob) {
+      const btn = $('share'); btn.disabled = true; btn.textContent = 'Getting it ready…';
+      try { blob = await makeImage(); ready = blob; readyKey = shareKey(); }
+      catch { btn.disabled = false; btn.textContent = 'Share'; fit.textContent = "This phone couldn't make the image. Use Save image or Print or save PDF instead."; return; }
+      btn.disabled = false; btn.textContent = 'Share';
+    }
+    try {
+      await navigator.share({ files: [new File([blob], imageName(), { type: 'image/png' })], ...(caption ? { text: caption } : {}) });
+      fit.textContent = (await copied) ? 'Shared. Your caption is copied: paste it in when you post.' : 'Shared.';
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // closed the share menu
+      fit.textContent = e && e.name === 'NotAllowedError' ? 'Ready. Tap Share again.' : "Couldn't open sharing here. Use Save image instead.";
+    }
   }
 
   // ---------- saving ----------
@@ -661,6 +707,9 @@
     window.print();
   });
   $('saveimg').addEventListener('click', saveImage);
+  if ($('share')) {
+    if (canShareFiles) { $('share').hidden = false; $('share').addEventListener('click', share); }
+  }
   window.addEventListener('resize', scalePreview);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderPreview);
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => renderPreview());
