@@ -164,6 +164,56 @@ nav a[aria-current="page"] { color: var(--text); }
 .layout-banner .m-feature { border-top: 0; padding-top: 0; }
 .layout-banner .m-feature h2 { margin: 0 calc(-12pt * var(--s)) calc(10pt * var(--s)); padding-top: calc(7pt * var(--s)); padding-bottom: calc(6pt * var(--s)); }
 
+/* display lettering (SIL OFL fonts, self-hosted): for the name and section headings only */
+@font-face { font-family: 'Anton'; font-weight: 400; font-display: swap; src: url('fonts/anton-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Alfa Slab One'; font-weight: 400; font-display: swap; src: url('fonts/alfa-slab-one-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rye'; font-weight: 400; font-display: swap; src: url('fonts/rye-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lobster'; font-weight: 400; font-display: swap; src: url('fonts/lobster-latin-400-normal.woff2') format('woff2'); }
+.menu-page.font-heavy { --m-body: Inter, system-ui, sans-serif; --m-bs: .86; --m-head: Anton, Impact, sans-serif; --m-head-tf: uppercase; --m-head-ls: .02em; --m-head-w: 400; --m-hs: 1.5;
+  --m-sec: Anton, Impact, sans-serif; --m-sec-tf: uppercase; --m-sec-ls: .06em; --m-sec-w: 400; --m-ss: 1.45; }
+.menu-page.font-slab { --m-body: Inter, system-ui, sans-serif; --m-bs: .86; --m-head: 'Alfa Slab One', Rockwell, serif; --m-head-tf: none; --m-head-ls: 0; --m-head-w: 400; --m-hs: 1.15;
+  --m-sec: 'Alfa Slab One', Rockwell, serif; --m-sec-tf: uppercase; --m-sec-ls: .05em; --m-sec-w: 400; --m-ss: 1.2; }
+.menu-page.font-western { --m-body: 'EB Garamond', Georgia, serif; --m-bs: 1; --m-head: Rye, Georgia, serif; --m-head-tf: none; --m-head-ls: .01em; --m-head-w: 400; --m-hs: 1.1;
+  --m-sec: Rye, Georgia, serif; --m-sec-tf: uppercase; --m-sec-ls: .04em; --m-sec-w: 400; --m-ss: 1.15; }
+.menu-page.font-script { --m-body: Inter, system-ui, sans-serif; --m-bs: .86; --m-head: Lobster, 'Brush Script MT', cursive; --m-head-tf: none; --m-head-ls: 0; --m-head-w: 400; --m-hs: 1.4;
+  --m-sec: Lobster, 'Brush Script MT', cursive; --m-sec-tf: none; --m-sec-ls: .01em; --m-sec-w: 400; --m-ss: 1.55; }
+
+/* photos (any layout): fixed heights, so fitting the page never waits for an image */
+.m-logo-tile { display: block; }
+.m-hero { display: block; width: 100%; height: calc(1.6in * var(--s)); object-fit: cover; border-radius: 6pt; margin-top: calc(10pt * var(--s)); }
+.m-sec-photo { display: block; width: 100%; height: calc(1.1in * var(--s)); object-fit: cover; border-radius: 6pt; margin: 0 0 calc(8pt * var(--s)); break-inside: avoid; }
+
+/* layout: Bold (colour band with a curved edge at the top, boxed section labels, price tags, a band at the bottom) */
+.menu-page.layout-bold {
+  --m-sec-style: normal; --m-tint: color-mix(in srgb, var(--m-accent) 16%, var(--m-bg));
+  /* two half-circles peeking in from the edges, kept inside the page margins so they never sit behind text */
+  background: radial-gradient(circle at 100% 80%, var(--m-tint) 0 .5in, transparent .51in), radial-gradient(circle at 0 42%, var(--m-tint) 0 .48in, transparent .49in), var(--m-bg);
+}
+.layout-bold .m-head { margin: -.6in -.65in calc(16pt * var(--s)); padding: .42in .65in .5in; background: var(--m-accent); color: var(--m-on); text-align: left;
+  border-radius: 0 0 50% 50% / 0 0 26pt 26pt; }
+.layout-bold .m-head.has-hero { display: grid; grid-template-columns: minmax(0, 1fr) 2.7in; gap: 18pt; align-items: center; }
+.layout-bold .m-name { color: var(--m-on); font-size: calc(36pt * var(--s) * var(--m-hs)); line-height: 1; }
+.layout-bold .m-tagline { color: var(--m-on); opacity: .92; font-style: normal; letter-spacing: .05em; margin-top: calc(6pt * var(--s)); }
+.layout-bold .m-rule { width: 56pt; height: 3pt; background: var(--m-on); opacity: .85; margin: calc(10pt * var(--s)) 0 0; }
+.layout-bold .m-logo-tile { display: inline-flex; background: #FFFFFF; border-radius: 8pt; padding: 5pt 8pt; margin-bottom: calc(8pt * var(--s)); }
+.layout-bold .m-logo { margin: 0; max-height: calc(48pt * var(--s)); max-width: 2.2in; }
+.layout-bold .m-hero { height: calc(1.9in * var(--s)); margin: 0; border-radius: 14pt; border: 3pt solid var(--m-on); }
+.layout-bold .m-head-small { margin: -.6in -.65in calc(14pt * var(--s)); padding: .26in .65in .22in; background: var(--m-accent); border-radius: 0 0 50% 50% / 0 0 16pt 16pt; text-align: left; }
+.layout-bold .m-name-small { color: var(--m-on); }
+.layout-bold .m-sec h2 { display: flex; align-items: center; gap: 8pt; }
+.layout-bold .m-sec h2::after { content: ""; flex: 1 1 auto; height: 2px; background: var(--m-accent); opacity: .45; }
+.layout-bold .m-sec-t { background: var(--m-accent); color: var(--m-on); padding: calc(3pt * var(--s)) 9pt calc(2pt * var(--s)); border-radius: 3pt; }
+.layout-bold .m-sethead h2::after { display: none; }
+.layout-bold .m-price { font-weight: 600; }
+.layout-bold .m-item:not(.noprice) > .m-price { background: var(--m-tint); padding: 0 5pt; border-radius: 3pt; }
+.layout-bold .m-dots { visibility: hidden; }
+.layout-bold .m-feature { border-top: 0; border-radius: 10pt; background: color-mix(in srgb, var(--m-accent) 11%, var(--m-bg)); }
+.layout-bold .m-feature .m-item:not(.noprice) > .m-price { background: var(--m-bg); }
+.layout-bold .m-specials { border-radius: 8pt; border-width: 2px; }
+.layout-bold .m-foot { margin: calc(10pt * var(--s)) -.65in -.6in; padding: calc(16pt * var(--s)) .65in .42in; background: var(--m-ink); color: var(--m-bg); border-top: 0;
+  border-radius: 50% 50% 0 0 / 22pt 22pt 0 0; }
+.layout-bold .m-qr-label { color: var(--m-bg); }
+
 /* borders */
 .border-thin::before, .border-double::before { content: ""; position: absolute; inset: .3in; pointer-events: none; }
 .border-thin::before { border: 1px solid var(--m-rule); }

@@ -32,6 +32,11 @@
     ['modern', 'Modern', "Inter, system-ui, sans-serif"],
     ['bold', 'Bold', "'Bebas Neue', Impact, sans-serif"],
     ['warm', 'Warm', "Fraunces, Georgia, serif"],
+    // Display lettering for the name and headings; dishes stay in an easy-to-read body font.
+    ['heavy', 'Heavy', "Anton, Impact, sans-serif"],
+    ['slab', 'Slab', "'Alfa Slab One', Rockwell, serif"],
+    ['western', 'Western', "Rye, Georgia, serif"],
+    ['script', 'Script', "Lobster, 'Brush Script MT', cursive"],
   ];
   const PALETTES = [ // [id, name, paper, ink, muted, accent]
     ['cream', 'Cream', '#FBF8F2', '#221C18', '#6B5D52', '#8E3B24'],
@@ -45,10 +50,17 @@
     ['midnight', 'Midnight', '#141922', '#F2EEE6', '#ADA69A', '#E0AE4C'],
     ['forest', 'Forest', '#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'],
     ['charcoal', 'Charcoal', '#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
+    ['mustard', 'Mustard', '#1C1A17', '#F4EFE6', '#B8B0A2', '#F2B705'],
+    ['ketchup', 'Ketchup', '#FFF8EE', '#2A1712', '#6E5248', '#C8281E'],
   ];
-  const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines'], ['banner', 'Colour bands']];
+  const LAYOUTS = [['centered', 'Centered'], ['left', 'Left-aligned'], ['leaders', 'Dotted lines'], ['banner', 'Colour bands'], ['bold', 'Bold']];
   // Ready-made looks: one click sets fonts, colours, layout and border together.
   const LOOKS = [
+    ['Bold grill', { font: 'heavy', palette: 'ketchup', layout: 'bold', border: 'none' }],
+    ['Night market', { font: 'heavy', palette: 'mustard', layout: 'bold', border: 'none' }],
+    ['Saloon', { font: 'western', palette: 'tavern', layout: 'bold', border: 'none' }],
+    ['Retro diner', { font: 'slab', palette: 'harbor', layout: 'bold', border: 'none' }],
+    ['Sweet shop', { font: 'script', palette: 'blush', layout: 'bold', border: 'none' }],
     ['Tavern', { font: 'elegant', palette: 'tavern', layout: 'banner', border: 'double' }],
     ['Sports bar', { font: 'bold', palette: 'charcoal', layout: 'banner', border: 'none' }],
     ['Bistro', { font: 'classic', palette: 'cream', layout: 'leaders', border: 'thin' }],
@@ -76,8 +88,9 @@
     const ex = (e) => (e && Array.isArray(e.list) ? { lead: String(e.lead || ''), list: e.list.map((x) => ({ name: String(x.name || ''), price: String(x.price || '') })) } : null);
     m.pages = m.pages === 2 ? 2 : 1;
     m.qr = { url: String((m.qr && m.qr.url) || ''), label: String((m.qr && m.qr.label) || '') };
+    m.hero = typeof m.hero === 'string' && m.hero ? m.hero : null;
     m.sections = (m.sections || []).map((sec) => ({
-      name: '', note: '', price: '', ...sec, feature: !!sec.feature,
+      name: '', note: '', price: '', ...sec, feature: !!sec.feature, photo: typeof sec.photo === 'string' && sec.photo ? sec.photo : null,
       kind: KINDS.some(([k]) => k === sec.kind) ? sec.kind : 'normal',
       extras: ex(sec.extras),
       items: (sec.items || []).map((it) => ({ name: '', desc: '', tags: [], ...it, prices: it.prices && it.prices.length ? it.prices : [{ label: '', amount: '' }], extras: ex(it.extras) })),
@@ -146,6 +159,38 @@
   let menu = blankMenu();
   let uid = null;
   let kit = { logo: null, logo_name: null, colors: [] };
+
+  // ---------- food photos (the same private library as Build's "Your photos") ----------
+  let photos = []; let photoBox = null; let photoBoxEl = null;
+  const photoUrl = (id) => (photoBox && photoBox.links[id]) || null;
+  const photoName = (id) => { const p = photos.find((x) => x.id === id); return p ? (p.name || '').trim() : ''; };
+  function photoSelect(obj, key, id) {
+    const sel = h('select', { class: 'mselect m-photo-sel', id, onchange: (e) => { obj[key] = e.target.value || null; changed(); } });
+    const fill = () => {
+      sel.replaceChildren(h('option', { value: '', text: 'None' }),
+        ...photos.map((p, i) => h('option', { value: p.id, selected: obj[key] === p.id ? true : null, text: p.name.trim() || `Photo ${i + 1}` })));
+    };
+    sel._fill = fill; fill();
+    return sel;
+  }
+  function startPhotos() {
+    if (!window.SogilexPhotos || photoBoxEl) return;
+    photoBoxEl = h('div', { class: 'm-photos' });
+    photoBox = SogilexPhotos.mount(photoBoxEl, {
+      db, uid,
+      onChange: (list) => {
+        const had = photos.length;
+        photos = list;
+        // A photo that was removed comes off the menu too.
+        const ids = new Set(list.map((p) => p.id));
+        if (menu.hero && !ids.has(menu.hero)) menu.hero = null;
+        menu.sections.forEach((s) => { if (s.photo && !ids.has(s.photo)) s.photo = null; });
+        if (!had && list.length) renderEditor(); // first photos: the section pickers appear
+        else document.querySelectorAll('.m-photo-sel').forEach((s) => s._fill && s._fill());
+        clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 120);
+      },
+    });
+  }
 
   // ---------- small DOM helper ----------
   function h(tag, attrs, ...kids) {
@@ -408,6 +453,14 @@
       menuLogo().logo ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: menu.showLogo, onchange: (e) => { menu.showLogo = e.target.checked; changed(); } }), 'Show my logo at the top of the menu') : null,
       null));
 
+    if (uid && photoBoxEl) {
+      wrap.append(h('div', { class: 'mgroup' },
+        h('h3', { text: 'Food photos' }),
+        h('p', { class: 'mhint', text: 'Your own photos (the same ones your website uses). Pick one for the top of the menu, and one for any section you like. Photos look best with the Bold layout.' }),
+        h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'm-hero' }, 'Big photo at the top'), photoSelect(menu, 'hero', 'm-hero')),
+        photoBoxEl));
+    }
+
     // ---------- the look ----------
     const choice = (key, value, label, extra) => h('button', {
       type: 'button', class: 'choice' + (extra && extra.cls ? ' ' + extra.cls : ''), 'aria-pressed': String(menu[key] === value),
@@ -469,7 +522,9 @@
         h('div', { class: 'mrow' },
           h('label', { class: 'mini', for: `m-kind-${si}` }, 'Kind'),
           h('select', { class: 'mselect', id: `m-kind-${si}`, onchange: (e) => { sec.kind = e.target.value; changed(true); } },
-            KINDS.map(([k, label]) => h('option', { value: k, selected: sec.kind === k ? true : null }, label)))),
+            KINDS.map(([k, label]) => h('option', { value: k, selected: sec.kind === k ? true : null }, label))),
+          uid && photos.length ? h('label', { class: 'mini', for: `m-photo-${si}` }, 'Photo') : null,
+          uid && photos.length ? photoSelect(sec, 'photo', `m-photo-${si}`) : null),
         sec.kind === 'set' ? h('div', { class: 'mprice' },
           h('label', { class: 'mini', for: `m-setp-${si}` }, 'Price for the whole set'),
           field(sec, 'price', { id: `m-setp-${si}`, class: 'input pamount', maxlength: '16', placeholder: '95' })) : null,
@@ -589,8 +644,10 @@
     const el = h('section', { class: 'm-sec' + (sec.kind === 'specials' ? ' m-specials' : '') + (sec.kind === 'set' ? ' m-set' : '') + (sec.feature && sec.kind === 'normal' ? ' m-feature' : '') });
     const setPrice = sec.kind === 'set' && sec.price.trim() && !cont;
     if (setPrice) {
-      el.append(h('div', { class: 'm-sethead' }, h('h2', { text: name }), h('span', { class: 'm-dots', 'aria-hidden': 'true' }), h('span', { class: 'm-price', text: priceText(sec.price) })));
-    } else if (name) el.append(h('h2', { text: cont ? `${name}, continued` : name }));
+      el.append(h('div', { class: 'm-sethead' }, h('h2', {}, h('span', { class: 'm-sec-t', text: name })), h('span', { class: 'm-dots', 'aria-hidden': 'true' }), h('span', { class: 'm-price', text: priceText(sec.price) })));
+    } else if (name) el.append(h('h2', {}, h('span', { class: 'm-sec-t', text: cont ? `${name}, continued` : name })));
+    const photo = !cont && sec.photo ? photoUrl(sec.photo) : null;
+    if (photo) el.append(h('img', { class: 'm-sec-photo', src: photo, alt: photoName(sec.photo) || name }));
     if (!cont && sec.note.trim()) el.append(h('p', { class: 'm-note', text: sec.note.trim() }));
     return el;
   }
@@ -628,11 +685,14 @@
       page.style.setProperty('--m-muted', muted); page.style.setProperty('--m-accent', accent);
       page.style.setProperty('--m-on', onAccent(accent, ink, bg));
       if (i === 0) {
-        page.append(h('header', { class: 'm-head' },
-          menuLogo().logo && menu.showLogo ? h('img', { class: 'm-logo', src: menuLogo().logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' }) : null,
-          h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
-          menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
-          h('div', { class: 'm-rule' })));
+        const hero = menu.hero ? photoUrl(menu.hero) : null;
+        page.append(h('header', { class: 'm-head' + (hero ? ' has-hero' : '') },
+          h('div', { class: 'm-head-text' },
+            menuLogo().logo && menu.showLogo ? h('span', { class: 'm-logo-tile' }, h('img', { class: 'm-logo', src: menuLogo().logo, alt: (menu.name.trim() || 'Restaurant') + ' logo' })) : null,
+            h('h1', { class: 'm-name', text: menu.name.trim() || 'Your restaurant' }),
+            menu.showTagline && menu.tagline.trim() ? h('p', { class: 'm-tagline', text: menu.tagline.trim() }) : null,
+            h('div', { class: 'm-rule' })),
+          hero ? h('img', { class: 'm-hero', src: hero, alt: photoName(menu.hero) || 'Food photo' }) : null));
       } else if (menu.name.trim()) {
         page.append(h('header', { class: 'm-head m-head-small' }, h('p', { class: 'm-name-small', text: menu.name.trim() })));
       }
@@ -781,6 +841,7 @@
     }
     uid = s.user.id;
     if (window.SogilexBrand) kit = await SogilexBrand.load(db, uid);
+    startPhotos();
     await loadOnline();
     $('signout').hidden = false; $('pwbtn').hidden = false;
     try {
