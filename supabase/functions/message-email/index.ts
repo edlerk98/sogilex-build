@@ -153,6 +153,31 @@ async function message(req: Request, id: number) {
   return json(req, { sent: true });
 }
 
+// A "free sample menu" request from the sogilex.com homepage: emailed to Sogilex itself, Reply-To the restaurant.
+const SAMPLE_TO = "hello@sogilex.com";
+async function sample(req: Request, id: number) {
+  if (!Number.isSafeInteger(id) || id <= 0) return json(req, { error: "bad id" }, 400);
+  const since = new Date(Date.now() - 15 * 60_000).toISOString();
+  const { data: claimed } = await admin.from("sample_requests").update({ emailed_at: new Date().toISOString() })
+    .eq("id", id).is("emailed_at", null).gt("created_at", since).select("restaurant, name, email, phone, note");
+  const r = claimed && claimed[0];
+  if (!r) return json(req, { sent: false });
+  const rows: [string, string][] = [["Restaurant", r.restaurant], ["Name", r.name], ["Email", r.email], ["Phone", r.phone ?? ""], ["Note", r.note ?? ""]];
+  const filled = rows.filter(([, v]) => String(v).trim());
+  const text = `New free sample request from sogilex.com:\n\n${filled.map(([k, v]) => `${k}: ${v}`).join("\n")}\n\nReply to this email to answer ${r.name}.\n`;
+  const html = wrap(`<p style="color:#5e4d63">New free sample request from <b>sogilex.com</b></p>` +
+    filled.map(([k, v]) => `<p style="margin:0 0 10px"><span style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5e4d63">${esc(k)}</span><br>${esc(String(v)).replace(/\n/g, "<br>")}</p>`).join("") +
+    `<p><b>Reply to this email</b> to answer ${esc(r.name)}.</p>`);
+  try {
+    await send(SAMPLE_TO, `Free sample request: ${String(r.restaurant).slice(0, 80)}`, text, html, EMAIL_RE.test(r.email) ? { reply_to: r.email } : {});
+  } catch (e) {
+    console.error("sample email failed", id, (e as Error).message);
+    await admin.from("sample_requests").update({ emailed_at: null }).eq("id", id);
+    return json(req, { sent: false }, 502);
+  }
+  return json(req, { sent: true });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors(req) });
   if (req.method !== "POST") return json(req, { error: "POST only" }, 405);
@@ -164,6 +189,7 @@ Deno.serve(async (req) => {
       case "confirm": return await confirm(req, String(body.token ?? ""));
       case "stop": return await stop(req, String(body.token ?? ""));
       case "message": return await message(req, Number(body.id));
+      case "sample": return await sample(req, Number(body.id));
       default: return json(req, { error: "Unknown action" }, 400);
     }
   } catch (e) {
