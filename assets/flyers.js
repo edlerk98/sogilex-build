@@ -21,7 +21,7 @@
   const blankFlyer = () => ({
     v: 1, starter: POSTS ? 'deal' : 'event', size: POSTS ? 'square' : 'letter', font: 'modern', palette: 'cream', layout: 'poster', showLogo: true, showBiz: true,
     kicker: '', headline: '', sub: '', offer: '', when: '', where: '', details: [''], cta: '', fine: '',
-    biz: { name: '', phone: '', website: '', address: '' }, qr: { url: '', label: '' },
+    biz: { name: '', phone: '', website: '', address: '' }, qr: { url: '', label: '' }, caption: '', tone: 'friendly',
   });
 
   // Same curated fonts and colours as Menus (every palette passes WCAG AA).
@@ -88,6 +88,7 @@
       note: 'Only real reviews, copied exactly. Ask before using someone\'s full name.' },
   };
   const STARTERS = POSTS ? POST_STARTERS : FLYER_STARTERS;
+  const CAPTION_TONES = [['friendly', 'Friendly'], ['fun', 'Fun'], ['professional', 'Professional'], ['short', 'Short']];
   const hidden = (k) => (STARTERS[flyer.starter].hide || []).includes(k);
   const lbl = (k, fallback) => (STARTERS[flyer.starter].labels || {})[k] || fallback;
 
@@ -102,6 +103,8 @@
     if (!LAYOUTS.some(([id]) => id === out.layout)) out.layout = 'poster';
     if (out.palette !== 'logo' && !PALETTES.some(([id]) => id === out.palette)) out.palette = 'cream';
     out.photo = typeof out.photo === 'string' && out.photo ? out.photo : null;
+    out.caption = typeof out.caption === 'string' ? out.caption.slice(0, 2200) : '';
+    if (!CAPTION_TONES.some(([id]) => id === out.tone)) out.tone = 'friendly';
     return out;
   }
 
@@ -206,6 +209,82 @@
     return h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'f-dish' }, 'Use a dish from my menu'), sel);
   }
 
+  // ---------- caption (Posts): written by AI from the post's facts (Edge Function write-caption) ----------
+  // The words around the facts are AI-written; the facts are only the ones on the post (or typed in a change
+  // request). The owner can always edit the caption by hand, and it's saved with the post.
+  const CAPTION_URL = `${SUPABASE_URL}/functions/v1/write-caption`;
+  let captionBusy = false;
+  function captionPayload() {
+    const t = (v) => String(v || '').trim();
+    return {
+      kind: flyer.starter, kicker: t(flyer.kicker), headline: t(flyer.headline), sub: t(flyer.sub),
+      offer: hidden('offer') ? '' : t(flyer.offer), when: hidden('when') ? '' : t(flyer.when), where: hidden('where') ? '' : t(flyer.where),
+      details: hidden('details') ? [] : flyer.details.map(t).filter(Boolean), cta: t(flyer.cta), fine: t(flyer.fine),
+      business: { name: t(flyer.biz.name), phone: t(flyer.biz.phone), website: t(flyer.biz.website), address: t(flyer.biz.address) },
+    };
+  }
+  async function askCaption(instruction, say, buttons) {
+    if (captionBusy) return;
+    if (!flyer.headline.trim()) { say('Fill in the headline first, then write a caption.', true); return; }
+    captionBusy = true; buttons.forEach((b) => { b.disabled = true; });
+    say(instruction ? 'Changing the caption…' : 'Writing a caption…');
+    try {
+      const s = await session();
+      if (!s) throw new Error('Your sign-in has expired. Sign in again.');
+      const res = await fetch(CAPTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ post: captionPayload(), tone: flyer.tone, current: instruction ? flyer.caption : '', instruction }),
+        signal: AbortSignal.timeout(100000),
+      });
+      let data = {}; try { data = await res.json(); } catch { /* not JSON */ }
+      if (!res.ok || !data.caption) throw new Error(data.error || `That didn't work (${res.status}). Please try again.`);
+      flyer.caption = data.caption;
+      const box = $('f-caption'); if (box) box.value = flyer.caption;
+      changed();
+      say(`Done. Read it before you post: it only uses your facts, but you know your business best.${typeof data.left === 'number' ? ` ${data.left} caption${data.left === 1 ? '' : 's'} left today.` : ''}`);
+    } catch (e) { say((e && e.message) || "That didn't work. Please try again.", true); }
+    finally { captionBusy = false; buttons.forEach((b) => { b.disabled = false; }); }
+  }
+  function captionGroup() {
+    const status = h('p', { class: 'mhint mread-status', role: 'status', 'aria-live': 'polite' });
+    const say = (text, err) => { status.textContent = text; status.classList.toggle('err', !!err); };
+    const box = h('textarea', { class: 'input mtext', id: 'f-caption', rows: '8', maxlength: '2200', placeholder: 'Your caption appears here. You can also type or edit it yourself.',
+      oninput: (e) => { flyer.caption = e.target.value; changed(); } });
+    box.value = flyer.caption;
+    const writeBtn = h('button', { type: 'button', class: 'btn mread-btn', text: flyer.caption.trim() ? 'Write a new one' : 'Write a caption' });
+    const ask = h('input', { class: 'input', type: 'text', id: 'f-cap-ask', maxlength: '300', 'aria-label': 'What should change in the caption?',
+      placeholder: 'Change it: "make it shorter", "mention we\'re dog friendly"' });
+    const changeBtn = h('button', { type: 'button', class: 'iconbtn', text: 'Change it' });
+    const copyBtn = h('button', { type: 'button', class: 'iconbtn', text: 'Copy caption' });
+    const buttons = [writeBtn, changeBtn];
+    writeBtn.addEventListener('click', () => askCaption('', say, buttons).then(() => { writeBtn.textContent = flyer.caption.trim() ? 'Write a new one' : 'Write a caption'; }));
+    const change = () => {
+      const v = ask.value.trim();
+      if (!v) { ask.focus(); return; }
+      if (!flyer.caption.trim()) { say('Write a caption first, then ask for changes.', true); return; }
+      askCaption(v, say, buttons).then(() => { if (!status.classList.contains('err')) ask.value = ''; });
+    };
+    changeBtn.addEventListener('click', change);
+    ask.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); change(); } });
+    copyBtn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(flyer.caption); say('Copied. Paste it under your post.'); }
+      catch { box.select(); say('Press Ctrl+C (or Cmd+C) to copy.'); }
+    });
+    const tones = h('div', { class: 'choices' }, CAPTION_TONES.map(([id, label]) => h('button', {
+      type: 'button', class: 'choice', 'aria-pressed': String(flyer.tone === id),
+      onclick: (e) => { flyer.tone = id; changed(); e.target.parentElement.querySelectorAll('.choice').forEach((b) => b.setAttribute('aria-pressed', String(b === e.target))); },
+    }, label)));
+    return h('div', { class: 'mgroup' },
+      h('h3', { text: 'Caption' }),
+      h('p', { class: 'mhint', text: 'Written by AI from the facts above. It won\'t add prices, dates or claims you didn\'t give. Check it before you post.' }),
+      h('div', { class: 'choice-label', text: 'Tone' }), tones,
+      h('div', { class: 'mrow' }, writeBtn, copyBtn),
+      box,
+      h('div', { class: 'mrow' }, ask, changeBtn),
+      status);
+  }
+
   // ---------- the editor ----------
   const titleOf = (d) => (d.headline || '').trim() || `Untitled ${NOUN}`;
   function listGroup() {
@@ -261,6 +340,8 @@
       hidden('details') ? null : flyer.details.length < MAX_DETAILS ? h('button', { type: 'button', class: 'addbtn', text: '+ Add a detail', onclick: () => { flyer.details.push(''); changed(true); } }) : null,
       labelled('f-cta', 'What should people do? (optional)', field(flyer, 'cta', { maxlength: '60', placeholder: ht.cta })),
       labelled('f-fine', 'Fine print (optional)', field(flyer, 'fine', { maxlength: '140', placeholder: 'e.g. 21+ · While supplies last' }))));
+
+    if (POSTS && uid) wrap.append(captionGroup());
 
     const b = flyer.biz;
     const logoBox = h('div');
