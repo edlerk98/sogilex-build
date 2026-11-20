@@ -49,6 +49,8 @@ export default {
     if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveLogo(env, slug, req.method);
     if ((url.pathname === '/menu' || url.pathname === '/menu/') && (req.method === 'GET' || req.method === 'HEAD')) return serveMenu(env, slug, req.method);
     if (url.pathname === '/menu-logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveMenuLogo(env, slug, req.method);
+    const mphoto = url.pathname.match(/^\/menu-photos\/([0-9a-f-]{36})\.jpg$/);
+    if (mphoto && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, mphoto[1], req.method, 'mphoto');
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
     if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
@@ -107,6 +109,7 @@ async function api(req, env, url) {
       if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); await env.SITES.delete('logo:' + result.old_slug); }
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
     }
+    if (url.pathname === '/menu-photos') return json(await copyMenuPhotos(env, token));
     if (url.pathname === '/unpublish') {
       const slug = await rpc(env, 'unpublish_site', {}, token);
       if (slug) { await env.SITES.delete('site:' + slug); await dropPhotos(env, slug, []); await env.SITES.delete('logo:' + slug); }
@@ -152,6 +155,45 @@ async function copyPhotos(env, token, slug, html) {
   return html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG));
 }
 
+// The online menu's photos (a big one at the top, one per section). The menu text is saved straight to the database
+// by the Menus page, so after each save that changes which photos it uses, the page asks for this copy with the
+// owner's sign-in. Same rules as a site: only their own photos, kept in KV as "mphoto:<name>:<id>".
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+async function copyMenuPhotos(env, token) {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/online_menus?select=slug,data`, {
+    headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) { const e = new Error('expired'); e.status = 401; throw e; }
+  const rows = res.ok ? await res.json() : [];
+  const row = rows[0];
+  if (!row) return { slug: null, kept: [] };
+  const d = row.data || {};
+  const ids = [...new Set([d.hero, ...(Array.isArray(d.sections) ? d.sections.map((s) => s && s.photo) : [])]
+    .filter((x) => typeof x === 'string' && UUID.test(x)))].slice(0, 20);
+  const kept = [];
+  if (ids.length) {
+    const r2 = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${ids.join(',')})`, {
+      headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
+    });
+    const photos = r2.ok ? await r2.json() : [];
+    await Promise.all(photos.map(async (p) => {
+      const file = await fetch(`${env.SUPABASE_URL}/storage/v1/object/authenticated/site-photos/${p.user_id}/${p.id}.jpg`, {
+        headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
+      });
+      if (!file.ok) return;
+      const bytes = await file.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > 3 * 1024 * 1024) return;
+      await env.SITES.put(`mphoto:${row.slug}:${p.id}`, bytes);
+      kept.push(p.id);
+    }));
+  }
+  let old = [];
+  try { old = JSON.parse((await env.SITES.get('mphotos:' + row.slug)) || '[]'); } catch { /* none */ }
+  await Promise.all(old.filter((id) => !kept.includes(id)).map((id) => env.SITES.delete(`mphoto:${row.slug}:${id}`)));
+  await env.SITES.put('mphotos:' + row.slug, JSON.stringify(kept));
+  return { slug: row.slug, kept };
+}
+
 // Remove a site's copied photos, except the ones in `keep`.
 async function dropPhotos(env, slug, keep) {
   let old = [];
@@ -186,8 +228,8 @@ async function serveLogo(env, slug, method) {
   });
 }
 
-async function servePhoto(env, slug, id, method) {
-  const bytes = await env.SITES.get(`photo:${slug}:${id}`, 'arrayBuffer');
+async function servePhoto(env, slug, id, method, prefix) {
+  const bytes = await env.SITES.get(`${prefix || 'photo'}:${slug}:${id}`, 'arrayBuffer');
   if (!bytes) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'public, max-age=60' } });
   return new Response(method === 'HEAD' ? null : bytes, {
     headers: {
@@ -215,6 +257,8 @@ const MENU_PALETTES = { // paper, ink, muted, accent (same as the Menus page)
   terracotta: ['#FBF2EA', '#2B1A14', '#735A4E', '#A84A28'], blush: ['#FCF3F2', '#2A1D21', '#72595F', '#A8345A'],
   butter: ['#FBF5DF', '#2A2414', '#6B5F3E', '#8A5A00'], midnight: ['#141922', '#F2EEE6', '#ADA69A', '#E0AE4C'],
   forest: ['#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'], charcoal: ['#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
+  tavern: ['#F6EFE2', '#2A1A14', '#6B5446', '#8A1F24'], mustard: ['#1C1A17', '#F4EFE6', '#B8B0A2', '#F2B705'],
+  ketchup: ['#FFF8EE', '#2A1712', '#6E5248', '#C8281E'],
 };
 // System fonts that keep each look's character (online pages load nothing from elsewhere).
 const MENU_FONTS = {
@@ -223,6 +267,10 @@ const MENU_FONTS = {
   modern: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'uppercase', '.12em'],
   bold: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', '"Arial Narrow", "Helvetica Neue Condensed", Impact, sans-serif', 'uppercase', '.04em'],
   warm: ['Georgia, "Times New Roman", serif', 'Georgia, "Times New Roman", serif', 'none', '0'],
+  heavy: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'Impact, "Arial Narrow Bold", "Helvetica Neue Condensed", sans-serif', 'uppercase', '.02em'],
+  slab: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', 'Rockwell, "Roboto Slab", "Courier New", serif', 'none', '0'],
+  western: ['Georgia, "Times New Roman", serif', 'Rockwell, Georgia, serif', 'uppercase', '.06em'],
+  script: ['system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', '"Snell Roundhand", "Brush Script MT", "Segoe Script", cursive', 'none', '0'],
 };
 const MENU_TAGS = { V: 'vegetarian', VG: 'vegan', GF: 'gluten-free', SP: 'spicy', N: 'contains nuts' };
 function darkenForLight(hex) {
@@ -233,8 +281,10 @@ function darkenForLight(hex) {
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 const txt = (v, max) => esc(String(v == null ? '' : v).slice(0, max || 400).trim());
-function menuPage(m) {
+function menuPage(m, photos) {
   const d = m.data;
+  // Only photos that were copied for this menu are shown; the id is checked against that list, never trusted.
+  const pic = (id, cls, alt) => (typeof id === 'string' && photos && photos.has(id) ? `<img class="${cls}" src="/menu-photos/${id}.jpg" alt="${alt}" loading="lazy">` : '');
   const colors = Array.isArray(m.colors) ? m.colors.filter((c) => /^#[0-9a-fA-F]{6}$/.test(c)) : [];
   const pal = d.palette === 'logo' && colors[0] ? ['#FBF8F2', '#221C18', '#6B5D52', darkenForLight(colors[0])] : (MENU_PALETTES[d.palette] || MENU_PALETTES.cream);
   const [body, head, tf, ls] = MENU_FONTS[d.font] || MENU_FONTS.classic;
@@ -245,7 +295,7 @@ function menuPage(m) {
     if (!ex || !Array.isArray(ex.list)) return '';
     const list = ex.list.filter((x) => x && String(x.name || '').trim()).slice(0, 10);
     if (!list.length) return '';
-    return `<p class="x">${ex.lead && String(ex.lead).trim() ? `<em>${txt(ex.lead, 24)}</em> ` : ''}${list.map((x) => txt(x.name, 40) + (String(x.price || '').trim() ? ` <span class="xp">${price(x.price)}</span>` : '')).join(' · ')}</p>`;
+    return `<p class="x">${ex.lead && String(ex.lead).trim() ? `<em>${txt(ex.lead, 40)}</em> ` : ''}${list.map((x) => txt(x.name, 60) + (String(x.price || '').trim() ? ` <span class="xp">${price(x.price)}</span>` : '')).join(' · ')}</p>`;
   };
   const used = new Set();
   const sections = (d.sections || []).slice(0, 40).map((s) => {
@@ -255,22 +305,22 @@ function menuPage(m) {
       const tags = (Array.isArray(it.tags) ? it.tags : []).filter((t) => MENU_TAGS[t]);
       tags.forEach((t) => used.add(t));
       const ps = set ? [] : (Array.isArray(it.prices) ? it.prices : []).filter((p) => p && String(p.amount || '').trim()).slice(0, 4);
-      const pr = ps.map((p) => `${String(p.label || '').trim() ? `<small>${txt(p.label, 20)}</small> ` : ''}${price(p.amount)}`).join(' <span class="dot">·</span> ');
-      return `<li class="it"><div class="row"><span class="nm">${txt(it.name, 60)}${tags.length ? ` <span class="tg">${tags.join(' · ')}</span>` : ''}</span>${pr ? `<span class="lead" aria-hidden="true"></span><span class="pr">${pr}</span>` : ''}</div>${String(it.desc || '').trim() ? `<p class="ds">${txt(it.desc, 160)}</p>` : ''}${extras(it.extras)}</li>`;
+      const pr = ps.map((p) => `${String(p.label || '').trim() ? `<small>${txt(p.label, 40)}</small> ` : ''}${price(p.amount)}`).join(' <span class="dot">·</span> ');
+      return `<li class="it"><div class="row"><span class="nm">${txt(it.name, 80)}${tags.length ? ` <span class="tg">${tags.join(' · ')}</span>` : ''}</span>${pr ? `<span class="lead" aria-hidden="true"></span><span class="pr">${pr}</span>` : ''}</div>${String(it.desc || '').trim() ? `<p class="ds">${txt(it.desc, 300)}</p>` : ''}${extras(it.extras)}</li>`;
     }).join('');
     const name = String(s.name || '').trim();
     if (!items && !name) return '';
     const sp = set && String(s.price || '').trim() ? `<span class="pr">${price(s.price)}</span>` : '';
-    return `<section class="sec${s.kind === 'specials' ? ' specials' : ''}${set ? ' set' : ''}">${name || sp ? `<h2><span>${txt(name, 40)}</span>${sp}</h2>` : ''}${String(s.note || '').trim() ? `<p class="nt">${txt(s.note, 100)}</p>` : ''}${items ? `<ul>${items}</ul>` : ''}${extras(s.extras)}</section>`;
+    return `<section class="sec${s.kind === 'specials' ? ' specials' : ''}${set ? ' set' : ''}">${name || sp ? `<h2><span>${txt(name, 60)}</span>${sp}</h2>` : ''}${pic(s.photo, 'sp', txt(name, 60))}${String(s.note || '').trim() ? `<p class="nt">${txt(s.note, 300)}</p>` : ''}${items ? `<ul>${items}</ul>` : ''}${extras(s.extras)}</section>`;
   }).join('');
   const f = d.footer || {};
-  const contact = [f.address, f.phone].map((x) => txt(x, 100)).filter(Boolean).join(' · ');
+  const contact = [f.address, f.phone].map((x) => txt(x, 200)).filter(Boolean).join(' · ');
   const legend = Object.keys(MENU_TAGS).filter((k) => used.has(k)).map((k) => `${k} ${MENU_TAGS[k]}`).join(' · ');
   const title = txt(d.name, 60) || 'Menu';
   // The menu's own logo file: it can differ from the website's (/logo.png) when the owner chose one for the menu only.
   const logo = m.logo && d.showLogo !== false ? '<img class="logo" src="/menu-logo.png" alt="' + title + ' logo">' : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} · Menu</title><meta name="description" content="${title} menu${d.tagline ? ': ' + txt(d.tagline, 80) : ''}"><meta name="theme-color" content="${pal[0]}">
+<title>${title} · Menu</title><meta name="description" content="${title} menu${d.tagline ? ': ' + txt(d.tagline, 100) : ''}"><meta name="theme-color" content="${pal[0]}">
 <style>
 :root{--bg:${pal[0]};--ink:${pal[1]};--mu:${pal[2]};--ac:${pal[3]};--rule:color-mix(in srgb,var(--mu) 40%,var(--bg))}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
@@ -299,10 +349,12 @@ ul{list-style:none;margin:0;padding:0}
 footer.mf{text-align:center;color:var(--mu);font-size:14px;border-top:1px solid var(--rule);padding-top:16px}
 footer.mf p{margin:3px 0}
 a{color:var(--ac)}
+.hero{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:14px;margin:18px 0 0}
+.sp{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:10px;margin:0 0 12px}
 </style></head><body><main>
-<header>${logo}<h1>${title}</h1>${d.showTagline !== false && String(d.tagline || '').trim() ? `<p class="tl">${txt(d.tagline, 80)}</p>` : ''}</header>
+<header>${logo}<h1>${title}</h1>${d.showTagline !== false && String(d.tagline || '').trim() ? `<p class="tl">${txt(d.tagline, 100)}</p>` : ''}${pic(d.hero, 'hero', 'Food at ' + title)}</header>
 ${sections || '<p>This menu is being updated. Please check back soon.</p>'}
-${legend || contact || String(f.hours || '').trim() ? `<footer class="mf">${legend ? `<p>${legend}</p>` : ''}${String(f.hours || '').trim() ? `<p>${txt(f.hours, 100)}</p>` : ''}${contact ? `<p>${contact}</p>` : ''}</footer>` : ''}
+${legend || contact || String(f.hours || '').trim() ? `<footer class="mf">${legend ? `<p>${legend}</p>` : ''}${String(f.hours || '').trim() ? `<p>${txt(f.hours, 160)}</p>` : ''}${contact ? `<p>${contact}</p>` : ''}</footer>` : ''}
 </main></body></html>`;
 }
 async function serveMenuLogo(env, slug, method) {
@@ -318,7 +370,9 @@ async function serveMenuLogo(env, slug, method) {
 async function serveMenu(env, slug, method) {
   const m = await publicMenu(env, slug);
   if (!m) return notFound();
-  const html = await prepare(menuPage(m), slug, false);
+  let photos = new Set();
+  try { photos = new Set(JSON.parse((await env.SITES.get('mphotos:' + slug)) || '[]')); } catch { /* none */ }
+  const html = await prepare(menuPage(m, photos), slug, false);
   return new Response(method === 'HEAD' ? null : html, { headers: { ...SITE_HEADERS, 'Cache-Control': 'public, max-age=60' } });
 }
 

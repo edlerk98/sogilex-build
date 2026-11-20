@@ -243,8 +243,25 @@
       if (error) throw error;
       online.slug = data.slug;
       onlineSay(`Up to date. Changes show online within a minute.`);
+      syncOnlinePhotos();
       return true;
     } catch (e) { onlineSay((e && e.message) || "Couldn't update the online menu. Check your connection.", true); return false; }
+  }
+  // The online menu's photos are copied by the publishing service (api.sogilex.net) with the owner's sign-in.
+  // Only when the photos used change (or the name does), so ordinary price edits don't copy anything.
+  let syncedPhotos = null;
+  async function syncOnlinePhotos() {
+    const key = online.slug + '|' + [menu.hero, ...menu.sections.map((s) => s.photo)].filter(Boolean).join(',');
+    if (key === syncedPhotos) return;
+    try {
+      const s = await session();
+      if (!s) return;
+      const res = await fetch('https://api.sogilex.net/menu-photos', {
+        method: 'POST', headers: { Authorization: `Bearer ${s.access_token}`, 'Content-Type': 'application/json' }, body: '{}',
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) syncedPhotos = key;
+    } catch { /* tried again on the next save */ }
   }
   function onlineGroup() {
     if (!online.can_publish) return null;
