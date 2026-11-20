@@ -103,6 +103,11 @@
 .size-square.layout-block .f-photo { margin: calc(-18pt * var(--s)) -.6in 0; height: calc(2.2in * var(--s)); }
 .layout-block.has-photo .f-band { padding-bottom: calc(20pt * var(--s)); }
 .layout-block.has-photo .f-inner { gap: calc(18pt * var(--s)); }
+/* No photo: the colour band fills the free space (the message sits at its bottom edge) and the facts follow right
+   under it, instead of floating in an empty middle. */
+.layout-block:not(.has-photo) .f-band { flex: 1 1 auto; }
+.layout-block:not(.has-photo) .f-band > :last-child { margin-top: auto; }
+.layout-block:not(.has-photo) .f-mid { margin-block: 0 auto; padding-top: calc(10pt * var(--s)); }
 /* Left-aligned: a framed photo with the accent colour on its left edge */
 .layout-left .f-photo { border-radius: 0; border-left: calc(8pt * var(--s)) solid var(--f-accent); }
 /* story size (Instagram / Facebook stories, 9:16): saved as 1080 x 1920 */
