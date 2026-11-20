@@ -209,6 +209,9 @@ window.SogilexAuth = (() => {
         });
         setTimeout(() => code.focus(), 0);
       }
+      form.append(h('p', { class: 'sx-note sx-legal' }, 'By signing in you agree to the ',
+        h('a', { href: 'https://sogilex.com/terms/', target: '_blank', rel: 'noopener', text: 'Terms' }), ' and ',
+        h('a', { href: 'https://sogilex.com/privacy/', target: '_blank', rel: 'noopener', text: 'Privacy policy' }), '.'));
       root.append(form);
     }
     render();
