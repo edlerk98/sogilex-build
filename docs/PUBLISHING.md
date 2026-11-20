@@ -26,6 +26,11 @@ with Sogilex sign-in).
   `site-photos` bucket, stores it in KV as `photo:<name>:<id>` (list in `photos:<name>`), and points the page at
   `/photos/<id>.jpg`. Deleted or someone else's photos become a blank image. Republish drops copies no longer used;
   unpublish drops all. At most 40 photos per site (Workers allow 50 fetches per request).
+- Online menu photos (2026-11-20): the menu text holds photo ids (`hero`, `sections[].photo`). After a save that
+  changes them, the Menus page calls `POST api.sogilex.net/menu-photos` with the owner's sign-in; the Worker reads
+  their own `online_menus` row, copies up to 20 of their own photos to KV `mphoto:<name>:<id>` (list
+  `mphotos:<name>`), deletes ones no longer used, and serves them at `/menu-photos/<id>.jpg`. The menu page only
+  shows ids on that list. Not yet: copies are left behind if the menu is taken offline or renamed.
 - Served with a Content-Security-Policy that blocks all scripts and outside loads (images only from the site itself
   or data: URLs), plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).
