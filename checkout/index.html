@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sogilex checkout</title>
+<meta name="description" content="Choose a Sogilex plan.">
+<meta name="theme-color" content="#120A18">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/unbounded-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/build.css">
+<link rel="stylesheet" href="../assets/menus.css">
+<link rel="stylesheet" href="../assets/account.css">
+<link rel="stylesheet" href="../assets/checkout.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="sunset" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D91E8C"/><stop offset="0.55" stop-color="#F2496B"/><stop offset="1" stop-color="#FF9A4D"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 124 102"><rect x="0" y="50" width="64" height="52" rx="11" fill="url(#sunset)"/><rect x="60" y="0" width="64" height="52" rx="11" fill="url(#sunset)"/></symbol>
+  </defs>
+</svg>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<header class="top">
+  <div class="wrap row">
+    <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home"><svg width="32" height="26" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">SOGILEX</span><span class="product">Checkout</span></a>
+    <nav aria-label="Main">
+      <details class="navmenu">
+        <summary>Tools</summary>
+        <div class="navmenu-panel">
+          <a href="../">Websites</a>
+          <a href="../menus/">Menus</a>
+          <a href="../flyers/">Flyers</a>
+          <a href="../posts/">Posts</a>
+          <a href="../invoices/">Invoices</a>
+        </div>
+      </details>
+      <details class="navmenu navmenu-right">
+        <summary>Account</summary>
+        <div class="navmenu-panel">
+          <a href="../account/">Your account</a>
+          <button class="navmenu-btn" type="button" id="pwbtn" hidden aria-haspopup="dialog">Password</button>
+          <button class="navmenu-btn" type="button" id="signout" hidden>Sign out</button>
+        </div>
+      </details>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap co" aria-labelledby="co-h">
+    <a class="co-back" href="../account/#sec-plan">← Back to your plans</a>
+    <h1 id="co-h" class="co-title">Your new plan</h1>
+    <div id="signin" class="panel acct-signin stack" hidden>
+      <h2 class="panel-h">Sign in to choose a plan</h2>
+      <div id="signin-mount"></div>
+    </div>
+    <div id="checkout" hidden>
+      <div class="co-grid">
+        <div class="stack">
+          <!-- 1. The order -->
+          <section class="panel co-box" aria-labelledby="co-order-h">
+            <h2 class="panel-h" id="co-order-h">Your order</h2>
+            <div class="choices co-billing" role="group" aria-label="Billing" id="co-billing"></div>
+            <div id="co-plan"></div>
+          </section>
+          <!-- 2. Payment: Stripe goes here. Sogilex never sees card numbers: Stripe Checkout (a page on stripe.com) or
+               Stripe's Payment Element (mounted into #stripe-payment) collects them. -->
+          <section class="panel co-box" aria-labelledby="co-pay-h">
+            <h2 class="panel-h" id="co-pay-h">Payment</h2>
+            <div id="stripe-payment" class="co-stripe" data-stripe-slot>
+              <p class="co-lock">Secure payment by Stripe</p>
+              <p class="muted">You'll enter your card on Stripe's secure page. Sogilex never sees or stores your card number.</p>
+              <p class="co-soon"><b>Payments aren't switched on yet.</b> You can save your choice now, and we'll email you when you can finish.</p>
+            </div>
+            <label class="co-agree"><input type="checkbox" id="co-agree"> <span>I agree to the <a href="https://sogilex.com/terms/" target="_blank" rel="noopener">Terms of use</a>. The plan renews automatically until I cancel it in Your account.</span></label>
+            <button class="btn big co-pay" type="button" id="co-pay">Continue to secure payment</button>
+            <p class="status" id="co-status" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+        <!-- Summary -->
+        <aside class="panel co-box co-summary" aria-labelledby="co-sum-h">
+          <h2 class="panel-h" id="co-sum-h">Summary</h2>
+          <dl id="co-lines" class="co-lines"></dl>
+          <p class="muted co-fine" id="co-fine"></p>
+          <p class="muted co-fine">Signed in as <b id="co-email"></b></p>
+        </aside>
+      </div>
+    </div>
+    <!-- 3. After paying (shown by ?status=success from Stripe's return address; for now after saving the choice). -->
+    <div id="done" class="panel co-box co-done" hidden>
+      <h2 class="panel-h" id="done-h"></h2>
+      <p id="done-text"></p>
+      <div class="acct-actions"><a class="btn" href="../account/">Go to your account</a><a class="btn btn-secondary" href="../">Open Build</a></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="pwdialog" class="pwdialog" aria-labelledby="pw-h">
+  <div class="stack">
+    <h2 class="panel-h" id="pw-h">Your password</h2>
+    <div id="pw-mount"></div>
+    <form method="dialog"><button class="btn btn-secondary" type="submit">Close</button></form>
+  </div>
+</dialog>
+
+<footer class="foot">
+  <div class="wrap row">
+    <span>© 2026 <a href="https://sogilex.com/">Sogilex</a></span>
+    <span><a href="https://sogilex.com/privacy/">Privacy</a> · <a href="https://sogilex.com/terms/">Terms</a> · Questions: <a href="mailto:hello@sogilex.com">hello@sogilex.com</a></span>
+  </div>
+</footer>
+
+
+<script src="../assets/vendor/supabase.js"></script>
+<script src="../assets/sogilex-auth.js"></script>
+<script src="../assets/nav.js" defer></script>
+<script src="../assets/brand.js" defer></script>
+<script src="../assets/checkout.js" defer></script>
+<script src="../assets/scene.js" defer></script>
+</body>
+</html>

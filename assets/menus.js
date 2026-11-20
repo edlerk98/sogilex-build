@@ -227,9 +227,10 @@
   const slugify = (v) => (v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 32);
   async function loadOnline() {
     try {
+      try { const { data: pl } = await db.rpc('my_plan').abortSignal(AbortSignal.timeout(8000)); online.plan = pl && pl.plan && pl.plan.id; } catch { /* shown as before */ }
       const { data, error } = await db.rpc('my_online_menu').abortSignal(AbortSignal.timeout(8000));
       if (error) throw error;
-      online = data || online;
+      online = { ...(data || online), plan: online.plan };
     } catch { /* stays hidden */ }
   }
   function onlineSay(text, err) {
@@ -264,7 +265,12 @@
     } catch { /* tried again on the next save */ }
   }
   function onlineGroup() {
-    if (!online.can_publish) return null;
+    if (!online.can_publish) {
+      // Plans without publishing (not Beta, which is invite-only as before): say how to get it.
+      if (!online.plan || online.plan === 'beta') return null;
+      return h('div', { class: 'mgroup' }, h('h3', { text: 'Online menu' }),
+        h('p', { class: 'mhint' }, 'Putting your menu online behind a QR code comes with the Do it yourself plan. ', h('a', { href: '../account/#sec-plan', class: 'linkbtn', text: 'See plans' })));
+    }
     const status = h('p', { class: 'mhint mread-status', id: 'm-online-status', role: 'status', 'aria-live': 'polite' });
     if (!online.slug) {
       const slugIn = h('input', { class: 'input', type: 'text', value: online.site_slug || slugify(menu.name) || '', maxlength: '32', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Web address name', placeholder: 'your-restaurant' });

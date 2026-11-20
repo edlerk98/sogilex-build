@@ -148,6 +148,16 @@
   const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
   const onAccent = (accent, ink, bg) => [ '#FFFFFF', '#141414', bg, ink ].sort((p, q) => contrast(q, accent) - contrast(p, accent))[0];
 
+  // The account's plan (supabase/021_plans.sql): limits are per day on Beta, per month on paid plans, once on the
+  // free trial. Loaded once; the counters say "left today", "left this month" or "left on your free trial".
+  let planInfo = null;
+  async function getPlan() {
+    if (planInfo) return planInfo;
+    try { const { data, error } = await db.rpc('my_plan').abortSignal(AbortSignal.timeout(8000)); if (error) throw error; planInfo = data || {}; }
+    catch { planInfo = {}; }
+    return planInfo;
+  }
+  const leftWhen = (p) => ({ 'this month': 'this month', 'on the free trial': 'on your free trial' }[p && p.when] || 'today');
   // ---------- small DOM helper ----------
   function h(tag, attrs, ...kids) {
     const n = document.createElement(tag);
@@ -242,7 +252,7 @@
       flyer.caption = data.caption;
       const box = $('f-caption'); if (box) box.value = flyer.caption;
       changed();
-      say(`Done. Read it before you post: it only uses your facts, but you know your business best.${typeof data.left === 'number' ? ` ${data.left} caption${data.left === 1 ? '' : 's'} left today.` : ''}`);
+      say(`Done. Read it before you post: it only uses your facts, but you know your business best.${typeof data.left === 'number' ? ` ${data.left} caption${data.left === 1 ? '' : 's'} left ${leftWhen(await getPlan())}.` : ''}`);
     } catch (e) { say((e && e.message) || "That didn't work. Please try again.", true); }
     finally { captionBusy = false; buttons.forEach((b) => { b.disabled = false; }); }
   }

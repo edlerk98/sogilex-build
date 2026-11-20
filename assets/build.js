@@ -38,11 +38,22 @@
   async function session() {
     try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; }
   }
+  // The account's plan (supabase/021_plans.sql): limits are per day on Beta, per month on paid plans, once on the
+  // free trial. Loaded once; the counters say "left today", "left this month" or "left on your free trial".
+  let planInfo = null;
+  async function getPlan() {
+    if (planInfo) return planInfo;
+    try { const { data, error } = await db.rpc('my_plan').abortSignal(AbortSignal.timeout(8000)); if (error) throw error; planInfo = data || {}; }
+    catch { planInfo = {}; }
+    return planInfo;
+  }
+  const leftWhen = (p) => ({ 'this month': 'this month', 'on the free trial': 'on your free trial' }[p && p.when] || 'today');
   async function showQuota() {
     try {
       const { data, error } = await db.rpc('build_quota').abortSignal(AbortSignal.timeout(8000));
       if (error) throw error;
-      $('quota').textContent = data > 0 ? `${data} ${data === 1 ? 'build' : 'builds'} left today` : 'No builds left today';
+      const w = leftWhen(await getPlan());
+      $('quota').textContent = data > 0 ? `${data} ${data === 1 ? 'build' : 'builds'} left ${w}` : `No builds left ${w}`;
       $('quota').classList.toggle('out', data <= 0);
       return data;
     } catch { $('quota').textContent = ''; return null; }
@@ -127,8 +138,23 @@
     } catch { site = { can_publish: false, slug: null, messages: 0 }; }
     refreshPublish();
   }
+  // Plans without publishing (not Beta, which is invite-only as before): say how to get it.
+  async function showPlanNote() {
+    const p = await getPlan();
+    let note = $('plan-note');
+    const show = !site.can_publish && p && p.plan && p.plan.id !== 'beta';
+    if (!show) { if (note) note.hidden = true; return; }
+    if (!note) {
+      note = document.createElement('p'); note.id = 'plan-note'; note.className = 'status plan-note';
+      note.append('Publishing your site at your-name.sogilex.net comes with the Do it yourself plan. ');
+      const a = document.createElement('a'); a.href = 'account/#sec-plan'; a.textContent = 'See plans'; note.append(a);
+      $('publish').after(note);
+    }
+    note.hidden = false;
+  }
   function refreshPublish() {
     $('publish').hidden = !site.can_publish;
+    showPlanNote();
     if (!site.can_publish) return;
     const live = !!site.slug;
     $('pub-live').hidden = !live;
@@ -362,7 +388,8 @@
     try {
       const { data, error } = await db.rpc('edit_quota').abortSignal(AbortSignal.timeout(8000));
       if (error) throw error;
-      $('edit-quota').textContent = data > 0 ? `${data} ${data === 1 ? 'edit' : 'edits'} left today` : 'No edits left today';
+      const w = leftWhen(await getPlan());
+      $('edit-quota').textContent = data > 0 ? `${data} ${data === 1 ? 'edit' : 'edits'} left ${w}` : `No edits left ${w}`;
       $('edit-quota').classList.toggle('out', data <= 0);
     } catch { $('edit-quota').textContent = ''; }
   }

@@ -170,6 +170,60 @@
         h('a', { class: 'btn btn-secondary acct-open', href: '../#photos-field', text: 'Manage in Build' }))));
   }
 
+  // ---------- your plan ----------
+  const dollars = (c) => (c % 100 ? money(c) : `$${(c / 100).toLocaleString('en-US')}`);
+  function priceLine(pl, billing) {
+    if (!pl || (!pl.month_cents && !pl.year_cents)) return 'Free';
+    const per = billing === 'year' && pl.year_cents ? `${dollars(pl.year_cents)}/year` : `${dollars(pl.month_cents)}/month`;
+    return pl.setup_cents ? `${dollars(pl.setup_cents)} setup + ${per}` : per;
+  }
+  const shortName = (x) => x.name.replace(' (done for you)', '');
+  function meter(label, used, allowed) {
+    const pct = allowed > 0 ? Math.min(100, Math.round((used / allowed) * 100)) : 100;
+    return h('div', { class: 'acct-meter' + (used >= allowed ? ' full' : '') },
+      h('div', { class: 'acct-meter-top' }, h('span', { text: label }), h('span', { text: `${used} of ${allowed}` })),
+      h('div', { class: 'acct-meter-bar', role: 'progressbar', 'aria-label': label, 'aria-valuemin': '0', 'aria-valuemax': String(allowed), 'aria-valuenow': String(Math.min(used, allowed)) }, h('i', { style: `width:${pct}%` })));
+  }
+  function planSection(res, plans) {
+    if (!res.ok || !res.data || !res.data.plan) return section('plan', 'Your plan', null, h('p', { class: 'muted', text: "Couldn't load your plan. Refresh to try again." }));
+    const d = res.data; const pl = d.plan; const L = pl.limits || {}; const u = d.used || {};
+    const when = { today: 'Used today', 'this month': 'Used this month', 'on the free trial': 'Used on your free trial' }[d.when] || 'Used';
+    const meters = [meter('New websites', u.builds || 0, d.builds_allowed || 0), meter('Website changes', u.edits || 0, L.edits || 0),
+      meter('Captions', u.captions || 0, L.captions || 0), meter('Menus read from photos', u.imports || 0, L.imports || 0)];
+    if (L.window === 'ever') meters.push(meter('Flyers', u.flyers || 0, L.flyers || 0), meter('Posts', u.posts || 0, L.posts || 0), meter('Quotes and invoices', u.docs || 0, L.docs || 0));
+    const req = d.requested_plan && plans.find((x) => x.id === d.requested_plan);
+    const chooser = h('div', { class: 'acct-chooser', id: 'plan-chooser', hidden: true });
+    let billing = 'month';
+    function drawChooser() {
+      const options = plans.filter((x) => x.public && x.id !== 'trial' && x.id !== pl.id);
+      chooser.replaceChildren(
+        h('div', { class: 'choices acct-billing', role: 'group', 'aria-label': 'Billing' },
+          ['month', 'year'].map((b) => h('button', { type: 'button', class: 'choice', 'aria-pressed': String(billing === b), onclick: () => { billing = b; drawChooser(); } }, b === 'month' ? 'Monthly' : 'Yearly (2 months free)'))),
+        h('div', { class: 'acct-plans' }, options.map((x) => h('article', { class: 'acct-plan' },
+          h('h3', { text: x.name }),
+          h('p', { class: 'acct-plan-price', text: priceLine(x, billing) }),
+          h('p', { class: 'muted', text: x.blurb }),
+          h('a', { class: 'btn btn-secondary', href: `../checkout/?plan=${encodeURIComponent(x.id)}&billing=${billing}`, text: `Choose ${shortName(x)}` })))));
+    }
+    drawChooser();
+    const toggle = h('button', { type: 'button', class: 'btn', text: 'Change plan' });
+    toggle.addEventListener('click', () => { chooser.hidden = !chooser.hidden; toggle.textContent = chooser.hidden ? 'Change plan' : 'Hide plans'; });
+    if (location.hash === '#sec-plan') { chooser.hidden = false; toggle.textContent = 'Hide plans'; }
+    return section('plan', 'Your plan', null, [
+      h('div', { class: 'acct-plan-now' },
+        h('div', {},
+          h('p', { class: 'acct-plan-name', text: pl.name }),
+          h('p', { class: 'muted', text: [priceLine(pl, d.billing), d.period_end ? `renews ${day(d.period_end)}` : '', d.status && d.status !== 'active' ? d.status.replace('_', ' ') : ''].filter(Boolean).join(' · ') }),
+          h('p', { class: 'muted acct-hint', text: pl.blurb })),
+        toggle),
+      req ? h('p', { class: 'acct-note acct-req', text: `You asked to switch to ${shortName(req)}${d.requested_billing ? ` (${d.requested_billing === 'year' ? 'yearly' : 'monthly'})` : ''} on ${day(d.requested_at)}. Payments aren't open yet: we'll email you when you can finish.` }) : null,
+      h('p', { class: 'acct-hint muted', text: `${when}:` }),
+      h('div', { class: 'acct-meters' }, meters),
+      h('p', { class: 'muted acct-hint', text: d.can_publish ? 'Publishing your website and online menu: included.' : 'Publishing your website and online menu: not included in this plan.' }),
+      chooser,
+    ]);
+  }
+
   function settings(user, mail) {
     const email = user.email || '';
     const m = mail.ok && mail.data;
@@ -206,7 +260,9 @@
     }
     $('signout').hidden = false; $('pwbtn').hidden = false; $('account').hidden = false;
     const uid = s.user.id; uidNow = uid;
-    const [builds, site, m, online, flyers, posts, docs, photos, mail, kit] = await Promise.all([
+    const [planRes, plansRes, builds, site, m, online, flyers, posts, docs, photos, mail, kit] = await Promise.all([
+      get(() => db.rpc('my_plan')),
+      get(() => db.from('plans').select('id, name, blurb, month_cents, year_cents, setup_cents, can_publish, public, sort').order('sort')),
       get(() => db.rpc('my_builds')),
       get(() => db.rpc('my_site')),
       get(() => db.from('menus').select('user_id, data, updated_at').eq('user_id', uid).maybeSingle()),
@@ -221,6 +277,7 @@
     const total = [builds, flyers, posts, docs].reduce((a, r) => a + (r.ok && r.data ? r.data.length : 0), 0) + (m.ok && m.data ? 1 : 0);
     $('acct-load').textContent = total ? `${total} thing${total === 1 ? '' : 's'} saved to your account.` : 'Nothing saved yet. Everything you make in any tool shows up here.';
     $('acct-body').replaceChildren(h('div', { class: 'acct-grid' },
+      planSection(planRes, plansRes.ok ? plansRes.data || [] : []),
       websites(builds, site), menu(m, online),
       many('flyers', 'Flyers', flyers, 'flyer', 'flyers'), many('posts', 'Posts', posts, 'post', 'posts'),
       invoices(docs), brand(kit, photos), settings(s.user, mail)));
