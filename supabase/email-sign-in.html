@@ -1,0 +1,47 @@
+<!-- Sogilex sign-in email: shows the code (typed into Build, Menus or Flyers) and keeps the link as a backup.
+     Paste into Supabase: Authentication > Emails > Templates, into BOTH "Magic link" and "Confirm signup"
+     (a first-time sign-in uses "Confirm signup"). Subject for both: Your Sogilex sign-in code
+     Email clients ignore web fonts and external CSS, so everything is inline with safe fallbacks. -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#120A18;padding:32px 16px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#1A0F22;border:1px solid #4A3357;border-radius:14px;">
+        <tr>
+          <td style="height:6px;line-height:6px;font-size:0;border-radius:14px 14px 0 0;background:linear-gradient(90deg,#D91E8C,#F2496B,#FF9A4D);background-color:#F2496B;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td style="padding:28px 28px 4px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;letter-spacing:.18em;color:#F7EFF3;">
+            SOGILEX
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.55;color:#F7EFF3;">
+            Your sign-in code:
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 28px 8px;font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:bold;letter-spacing:.3em;color:#FF9A4D;">
+            {{ .Token }}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 28px 8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#BBA9C2;">
+            Type it into the page you're signing in on. It works once and expires soon.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px 24px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#BBA9C2;">
+            Or sign in with this link on this device:<br>
+            <a href="{{ .ConfirmationURL }}" style="color:#F0458F;">Sign in to Sogilex</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px 24px;border-top:1px solid #33223F;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;color:#BBA9C2;">
+            Didn't ask for this? Ignore this email. Nobody can sign in without the code or the link.<br>
+            One Sogilex account works for Build, Menus and Flyers.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

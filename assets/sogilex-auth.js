@@ -2,7 +2,7 @@
 //
 // 1. One session for all of sogilex.com: the Supabase session lives in a cookie scoped to
 //    .sogilex.com (split into chunks, since a session can exceed one cookie's 4 KB), so signing in
-//    on Atlas also signs you in on Build. Customer sites live on sogilex.net, so they never see it.
+//    in one Sogilex tool also signs you in on the others. Customer sites live on sogilex.net, so they never see it.
 // 2. Two ways in: a password, or a 6-digit code sent by email (the email's link still works too).
 //    "Forgot password" is just: sign in with a code, then set a new password.
 //
