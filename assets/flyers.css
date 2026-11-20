@@ -105,6 +105,26 @@
 .layout-block.has-photo .f-inner { gap: calc(18pt * var(--s)); }
 /* Left-aligned: a framed photo with the accent colour on its left edge */
 .layout-left .f-photo { border-radius: 0; border-left: calc(8pt * var(--s)) solid var(--f-accent); }
+/* story size (Instagram / Facebook stories, 9:16): saved as 1080 x 1920 */
+.flyer.size-story { width: 7.5in; height: 13.333in; font-size: calc(15pt * var(--s) * var(--f-bs)); }
+.size-story .f-inner { padding: .9in .62in .7in; }
+.size-story .f-photo { height: calc(4.2in * var(--s)); }
+.size-story.layout-block .f-band { margin: -.9in -.62in 0; padding: .9in .62in calc(26pt * var(--s)); }
+.size-story.layout-block .f-photo { margin: calc(-18pt * var(--s)) -.62in 0; height: calc(4.4in * var(--s)); }
+
+/* display lettering for headlines (the @font-face rules are in menus.css; Save image embeds the fonts itself) */
+.flyer.font-heavy { --f-body: Inter, system-ui, sans-serif; --f-bs: .88; --f-head: Anton, Impact, sans-serif; --f-head-tf: uppercase; --f-head-ls: .01em; --f-head-w: 400; --f-head-lh: .95; --f-hs: 1.15;
+  --f-label: Inter, system-ui, sans-serif; --f-label-ls: .16em; }
+.flyer.font-slab { --f-body: Inter, system-ui, sans-serif; --f-bs: .88; --f-head: 'Alfa Slab One', Rockwell, serif; --f-head-ls: 0; --f-head-w: 400; --f-head-lh: 1.02; --f-hs: .86;
+  --f-label: Inter, system-ui, sans-serif; --f-label-ls: .16em; }
+.flyer.font-western { --f-head: Rye, Georgia, serif; --f-head-ls: .01em; --f-head-w: 400; --f-head-lh: 1.05; --f-hs: .82; }
+.flyer.font-script { --f-body: Inter, system-ui, sans-serif; --f-bs: .88; --f-head: Lobster, 'Brush Script MT', cursive; --f-head-ls: 0; --f-head-w: 400; --f-head-lh: 1.05; --f-hs: 1;
+  --f-label: Inter, system-ui, sans-serif; --f-label-ls: .16em; }
+
+/* a customer review (Posts): the quote in italics, the name under it */
+.is-quote .f-head { font-style: italic; text-transform: none; letter-spacing: 0; line-height: 1.2; text-wrap: pretty; }
+.is-quote.font-heavy .f-head, .is-quote.font-slab .f-head, .is-quote.font-western .f-head { font-style: normal; }
+.is-quote .f-sub { color: var(--f-accent); font-weight: 600; font-size: 1.05em; }
 /* ===== end flyer page ===== */
 
 @media print {

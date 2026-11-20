@@ -2,6 +2,8 @@
 // Sogilex account (several flyers each). No AI: every word on the flyer is exactly what was typed, and anything left
 // blank is left off. Looks are curated (fonts x colours x layouts), the same approach as Menus.
 // Sizes: US Letter and A4 for print (browser print dialog, Save as PDF), Square for social posts ("Save image").
+// The same engine runs Sogilex Posts (build.sogilex.com/posts/, <body data-tool="posts">): social media images in
+// square and story sizes, its own kinds of post and its own saved list (table posts).
 (() => {
   const SUPABASE_URL = 'https://sdltqbctuieyjlujsdhj.supabase.co';
   const PUBLISHABLE_KEY = 'sb_publishable_SLyXLfw7hZQTL_xEpofo8g_XgKZZStM'; // public by design; RLS protects data
@@ -12,9 +14,12 @@
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
 
+  const POSTS = document.body.dataset.tool === 'posts';
+  const TABLE = POSTS ? 'posts' : 'flyers';
+  const NOUN = POSTS ? 'post' : 'flyer';
   const MAX_DETAILS = 5;
   const blankFlyer = () => ({
-    v: 1, starter: 'event', size: 'letter', font: 'modern', palette: 'cream', layout: 'poster', showLogo: true, showBiz: true,
+    v: 1, starter: POSTS ? 'deal' : 'event', size: POSTS ? 'square' : 'letter', font: 'modern', palette: 'cream', layout: 'poster', showLogo: true, showBiz: true,
     kicker: '', headline: '', sub: '', offer: '', when: '', where: '', details: [''], cta: '', fine: '',
     biz: { name: '', phone: '', website: '', address: '' }, qr: { url: '', label: '' },
   });
@@ -26,6 +31,10 @@
     ['classic', 'Classic', "'EB Garamond', Georgia, serif"],
     ['elegant', 'Elegant', "'Playfair Display', Georgia, serif"],
     ['warm', 'Warm', 'Fraunces, Georgia, serif'],
+    ['heavy', 'Heavy', 'Anton, Impact, sans-serif'],
+    ['slab', 'Slab', "'Alfa Slab One', Rockwell, serif"],
+    ['western', 'Western', 'Rye, Georgia, serif'],
+    ['script', 'Script', "Lobster, 'Brush Script MT', cursive"],
   ];
   const PALETTES = [ // [id, name, paper, ink, muted, accent]
     ['cream', 'Cream', '#FBF8F2', '#221C18', '#6B5D52', '#8E3B24'],
@@ -38,11 +47,15 @@
     ['midnight', 'Midnight', '#141922', '#F2EEE6', '#ADA69A', '#E0AE4C'],
     ['forest', 'Forest', '#14251C', '#F0ECE2', '#B5B2A3', '#E3B868'],
     ['charcoal', 'Charcoal', '#1B1B1B', '#F3F3F3', '#A9A9A9', '#F0715A'],
+    ['tavern', 'Tavern', '#F6EFE2', '#2A1A14', '#6B5446', '#8A1F24'],
+    ['mustard', 'Mustard', '#1C1A17', '#F4EFE6', '#B8B0A2', '#F2B705'],
+    ['ketchup', 'Ketchup', '#FFF8EE', '#2A1712', '#6E5248', '#C8281E'],
   ];
   const LAYOUTS = [['poster', 'Poster'], ['block', 'Colour block'], ['left', 'Left-aligned']];
-  const SIZES = ['letter', 'a4', 'square'];
+  const SIZES = POSTS ? ['square', 'story'] : ['letter', 'a4', 'square'];
   // Starters: a kind of flyer. They set a look and the example text in the empty boxes, never words on the flyer.
-  const STARTERS = {
+  // Optional: `labels` renames boxes for that kind, `hide` leaves boxes out (and off the image), `note` adds a rule.
+  const FLYER_STARTERS = {
     event: { label: 'Event', look: { font: 'modern', palette: 'harbor', layout: 'poster' },
       hint: { kicker: 'Every Thursday', headline: 'Trivia Night', sub: 'Teams of up to six. Prizes for the top three.', offer: '', when: 'Thursdays, 7–9pm', where: 'Your place, address', detail: 'Free to play', cta: 'Call to reserve a table' } },
     special: { label: 'Special or deal', look: { font: 'bold', palette: 'charcoal', layout: 'block' },
@@ -56,14 +69,35 @@
     notice: { label: 'Notice or hours', look: { font: 'classic', palette: 'paper', layout: 'left' },
       hint: { kicker: 'Holiday hours', headline: 'Closed Thanksgiving Day', sub: 'Back to regular hours on Friday', offer: '', when: 'Thursday, November 26', where: '', detail: 'Order pies by Monday', cta: 'Thank you for a great year' } },
   };
+  const POST_STARTERS = {
+    deal: { label: 'Deal or special', look: { font: 'heavy', palette: 'mustard', layout: 'block' },
+      hint: { kicker: 'This week only', headline: 'Wing Night', sub: 'Any sauce, all night', offer: '$9.99', when: 'Tuesdays, 4pm–close', where: '', detail: 'Dine in only', cta: 'See you tonight' } },
+    event: { label: 'Event', look: { font: 'modern', palette: 'harbor', layout: 'poster' },
+      hint: { kicker: 'This Saturday', headline: 'Live Music', sub: 'Blues and soul covers', offer: '', when: 'Saturday · 8pm', where: 'On the patio', detail: 'No cover', cta: 'Bring a friend' } },
+    item: { label: 'Featured item', look: { font: 'heavy', palette: 'ketchup', layout: 'block' },
+      hint: { kicker: 'New on the menu', headline: 'Big Ben Burger', sub: '12 oz, cheddar, pickle and onion', offer: '$14', when: '', where: '', detail: 'Served with steak fries', cta: 'Available all week' },
+      labels: { headline: 'Name of the dish or product', sub: 'Short description (optional)', offer: 'Price (optional)' }, hide: ['when', 'where'] },
+    announce: { label: 'Announcement', look: { font: 'classic', palette: 'paper', layout: 'left' },
+      hint: { kicker: 'Holiday hours', headline: 'Closed Thanksgiving Day', sub: 'Back to regular hours on Friday', offer: '', when: 'Thursday, November 26', where: '', detail: 'Order pies by Monday', cta: 'Thank you for a great year' } },
+    hiring: { label: 'Now hiring', look: { font: 'slab', palette: 'harbor', layout: 'poster' },
+      hint: { kicker: 'Join the team', headline: 'Now Hiring', sub: 'Line cooks and servers', offer: '', when: 'Full and part time', where: '', detail: 'Flexible schedules', cta: 'Apply in person or send us a message' },
+      labels: { headline: 'Headline', sub: 'Which jobs', when: 'Hours (optional)' }, rows: { when: 'Hours' }, hide: ['offer', 'where'] },
+    review: { label: 'Customer review', look: { font: 'elegant', palette: 'cream', layout: 'poster' },
+      hint: { kicker: 'What our customers say', headline: 'The review, copied exactly as they wrote it', sub: 'Their name, as they signed it', offer: '', when: '', where: '', detail: '', cta: 'Thank you!' },
+      labels: { headline: 'The review, word for word', sub: 'Who wrote it, as they signed it (for example "Sarah M., on Google")' }, hide: ['offer', 'when', 'where', 'details'],
+      note: 'Only real reviews, copied exactly. Ask before using someone\'s full name.' },
+  };
+  const STARTERS = POSTS ? POST_STARTERS : FLYER_STARTERS;
+  const hidden = (k) => (STARTERS[flyer.starter].hide || []).includes(k);
+  const lbl = (k, fallback) => (STARTERS[flyer.starter].labels || {})[k] || fallback;
 
   function normalize(f) {
     const b = blankFlyer();
     const out = { ...b, ...f, biz: { ...b.biz, ...(f.biz || {}) }, qr: { ...b.qr, ...(f.qr || {}) } };
     for (const k of ['kicker', 'headline', 'sub', 'offer', 'when', 'where', 'cta', 'fine']) out[k] = String(out[k] || '');
     out.details = Array.isArray(out.details) && out.details.length ? out.details.slice(0, MAX_DETAILS).map((x) => String(x || '')) : [''];
-    if (!STARTERS[out.starter]) out.starter = 'event';
-    if (!SIZES.includes(out.size)) out.size = 'letter';
+    if (!STARTERS[out.starter]) out.starter = POSTS ? 'deal' : 'event';
+    if (!SIZES.includes(out.size)) out.size = SIZES[0];
     if (!FONTS.some(([id]) => id === out.font)) out.font = 'modern';
     if (!LAYOUTS.some(([id]) => id === out.layout)) out.layout = 'poster';
     if (out.palette !== 'logo' && !PALETTES.some(([id]) => id === out.palette)) out.palette = 'cream';
@@ -132,20 +166,60 @@
   function labelled(id, label, input) { input.id = id; return h('div', { class: 'field' }, h('label', { for: id, text: label }), input); }
   const hint = () => STARTERS[flyer.starter].hint;
 
+  // ---------- "Use a dish from my menu" ----------
+  // Copies a dish's name, description, price (exactly as on the menu) and its section's photo into the boxes.
+  // Prices that were read from a photo and never checked are left out, so an unchecked price can't reach a post.
+  let menuDishes = []; // [{ sec, name, desc, price, photo }]
+  function dishesOf(md) {
+    if (!md || !Array.isArray(md.sections)) return [];
+    const cur = md.showCurrency !== false && typeof md.currency === 'string' ? md.currency : '';
+    const money = (a) => { a = String(a || '').trim(); return a && cur && /^\d/.test(a) ? cur + a : a; };
+    const out = [];
+    for (const sec of md.sections) {
+      for (const it of (sec && sec.items) || []) {
+        const name = String((it && it.name) || '').trim();
+        if (!name) continue;
+        const prices = sec.kind === 'set' ? [] : ((it.prices || []).filter((p) => p && String(p.amount || '').trim() && !p.chk));
+        out.push({
+          sec: String(sec.name || '').trim() || 'Menu', name, desc: String(it.desc || '').trim(),
+          price: prices.map((p) => (String(p.label || '').trim() ? p.label.trim() + ' ' : '') + money(p.amount)).join(' · ').slice(0, 32),
+          photo: typeof sec.photo === 'string' ? sec.photo : null,
+        });
+      }
+    }
+    return out.slice(0, 300);
+  }
+  function dishPicker() {
+    if (!menuDishes.length) return null;
+    const groups = new Map();
+    menuDishes.forEach((d, i) => { if (!groups.has(d.sec)) groups.set(d.sec, []); groups.get(d.sec).push([i, d]); });
+    const sel = h('select', { class: 'mselect', id: 'f-dish', onchange: (e) => {
+      const d = menuDishes[Number(e.target.value)];
+      if (!d) return;
+      flyer.headline = d.name.slice(0, 60);
+      flyer.sub = d.desc.slice(0, 110);
+      if (!hidden('offer')) flyer.offer = d.price;
+      if (d.photo && photos.some((p) => p.id === d.photo)) flyer.photo = d.photo;
+      changed(true);
+    } }, h('option', { value: '', text: 'Choose a dish…' }),
+      ...[...groups].map(([sec, items]) => h('optgroup', { label: sec }, items.map(([i, d]) => h('option', { value: String(i), text: d.price ? `${d.name} (${d.price})` : d.name })))));
+    return h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'f-dish' }, 'Use a dish from my menu'), sel);
+  }
+
   // ---------- the editor ----------
-  const titleOf = (d) => (d.headline || '').trim() || 'Untitled flyer';
+  const titleOf = (d) => (d.headline || '').trim() || `Untitled ${NOUN}`;
   function listGroup() {
     if (!uid) return null;
-    const sel = h('select', { class: 'mselect', 'aria-label': 'Your saved flyers', onchange: (e) => openFlyer(e.target.value) },
+    const sel = h('select', { class: 'mselect', 'aria-label': `Your saved ${NOUN}s`, onchange: (e) => openFlyer(e.target.value) },
       list.map((r) => h('option', { value: r.id, selected: r.id === flyerId ? true : null }, titleOf(r.id === flyerId ? flyer : r.data))));
     return h('div', { class: 'mgroup' },
-      h('h3', { text: 'Your flyers' }),
+      h('h3', { text: `Your ${NOUN}s` }),
       h('div', { class: 'flyer-list' },
-        list.length ? sel : h('span', { class: 'mhint', text: 'Nothing saved yet. Your flyer saves as you type.' }),
+        list.length ? sel : h('span', { class: 'mhint', text: `Nothing saved yet. Your ${NOUN} saves as you type.` }),
         h('button', { type: 'button', class: 'iconbtn', text: '+ New', onclick: () => newFlyer() }),
         flyerId ? h('button', { type: 'button', class: 'iconbtn', text: 'Duplicate', onclick: () => newFlyer(JSON.parse(JSON.stringify(flyer))) }) : null,
         flyerId ? h('button', { type: 'button', class: 'iconbtn danger', text: 'Delete', onclick: deleteFlyer }) : null),
-      h('p', { class: 'mhint', text: 'Duplicate is handy for next week\'s version: change the date and print.' }));
+      h('p', { class: 'mhint', text: POSTS ? 'Duplicate is handy for next week\'s post: change the date and save the image.' : 'Duplicate is handy for next week\'s version: change the date and print.' }));
   }
 
   function renderEditor() {
@@ -156,20 +230,23 @@
     wrap.append(listGroup() || '');
 
     wrap.append(h('div', { class: 'mgroup' },
-      h('h3', { text: 'What kind of flyer?' }),
+      h('h3', { text: `What kind of ${NOUN}?` }),
       h('p', { class: 'mhint', text: 'Picks a matching look and shows examples in the empty boxes. Your words are never changed.' }),
       h('div', { class: 'choices' }, Object.entries(STARTERS).map(([id, s]) => h('button', {
         type: 'button', class: 'choice', 'aria-pressed': String(flyer.starter === id),
         onclick: () => { flyer.starter = id; Object.assign(flyer, s.look); changed(true); },
       }, s.label)))));
 
+    const note = STARTERS[flyer.starter].note;
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'The message' }),
-      labelled('f-head', 'Headline (the one thing people should notice)', field(flyer, 'headline', { maxlength: '60', placeholder: ht.headline })),
-      labelled('f-kicker', 'Small line above it (optional)', field(flyer, 'kicker', { maxlength: '40', placeholder: ht.kicker })),
-      labelled('f-sub', 'Line under it (optional)', field(flyer, 'sub', { maxlength: '110', placeholder: ht.sub })),
-      labelled('f-offer', 'Price or deal, shown big (optional)', field(flyer, 'offer', { maxlength: '32', placeholder: ht.offer || '$5 drafts' })),
-      h('p', { class: 'mhint', text: 'Short headlines print biggest. Anything left blank is left off the flyer.' })));
+      dishPicker(),
+      note ? h('p', { class: 'mcheck', text: note }) : null,
+      labelled('f-head', lbl('headline', 'Headline (the one thing people should notice)'), field(flyer, 'headline', { maxlength: flyer.starter === 'review' ? '200' : '60', placeholder: ht.headline })),
+      labelled('f-kicker', lbl('kicker', 'Small line above it (optional)'), field(flyer, 'kicker', { maxlength: '40', placeholder: ht.kicker })),
+      labelled('f-sub', lbl('sub', 'Line under it (optional)'), field(flyer, 'sub', { maxlength: '110', placeholder: ht.sub })),
+      hidden('offer') ? null : labelled('f-offer', lbl('offer', 'Price or deal, shown big (optional)'), field(flyer, 'offer', { maxlength: '32', placeholder: ht.offer || '$5 drafts' })),
+      h('p', { class: 'mhint', text: `Short headlines show biggest. Anything left blank is left off the ${NOUN}.` })));
 
     const details = h('div', { class: 'stack' });
     flyer.details.forEach((d, i) => details.append(h('div', { class: 'mrow' },
@@ -177,11 +254,11 @@
       flyer.details.length > 1 ? h('button', { type: 'button', class: 'iconbtn danger', 'aria-label': 'Remove this detail', text: '✕', onclick: () => { flyer.details.splice(i, 1); changed(true); } }) : null)));
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'The facts' }),
-      labelled('f-when', 'When', field(flyer, 'when', { maxlength: '60', placeholder: ht.when || 'Saturday, May 3 · 8pm' })),
-      labelled('f-where', 'Where', field(flyer, 'where', { maxlength: '80', placeholder: ht.where || 'Address' })),
-      h('div', { class: 'choice-label', text: 'Details (short lines)' }),
-      details,
-      flyer.details.length < MAX_DETAILS ? h('button', { type: 'button', class: 'addbtn', text: '+ Add a detail', onclick: () => { flyer.details.push(''); changed(true); } }) : null,
+      hidden('when') ? null : labelled('f-when', lbl('when', 'When'), field(flyer, 'when', { maxlength: '60', placeholder: ht.when || 'Saturday, May 3 · 8pm' })),
+      hidden('where') ? null : labelled('f-where', lbl('where', 'Where'), field(flyer, 'where', { maxlength: '80', placeholder: ht.where || 'Address' })),
+      hidden('details') ? null : h('div', { class: 'choice-label', text: 'Details (short lines)' }),
+      hidden('details') ? null : details,
+      hidden('details') ? null : flyer.details.length < MAX_DETAILS ? h('button', { type: 'button', class: 'addbtn', text: '+ Add a detail', onclick: () => { flyer.details.push(''); changed(true); } }) : null,
       labelled('f-cta', 'What should people do? (optional)', field(flyer, 'cta', { maxlength: '60', placeholder: ht.cta })),
       labelled('f-fine', 'Fine print (optional)', field(flyer, 'fine', { maxlength: '140', placeholder: 'e.g. 21+ · While supplies last' }))));
 
@@ -195,7 +272,7 @@
       wrap.append(h('div', { class: 'mgroup' },
         h('h3', { text: 'Photo' }),
         h('p', { class: 'mhint', text: 'One of your own photos: the dish, the band, the room. The same photos your website and menu use. Leave it out and the headline does the work.' }),
-        h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'f-photo' }, 'Photo on the flyer'), sel),
+        h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'f-photo' }, `Photo on the ${NOUN}`), sel),
         photoBoxEl));
     }
 
@@ -270,7 +347,11 @@
   // Headline size from its length: short headlines print huge. The fit step below shrinks everything if needed.
   function headSize() {
     const n = (flyer.headline.trim() || 'Your headline').length;
-    const base = flyer.size === 'square' ? 0.82 : 1;
+    const base = flyer.size === 'square' ? 0.82 : flyer.size === 'story' ? 0.9 : 1;
+    if (flyer.starter === 'review' && POSTS) { // a review reads as a quote: smaller than a headline, still big
+      const q = (flyer.headline.trim() || 'x').length;
+      return base * (q <= 40 ? 44 : q <= 90 ? 34 : q <= 140 ? 27 : 22);
+    }
     const pt = n <= 8 ? 104 : n <= 14 ? 88 : n <= 22 ? 72 : n <= 34 ? 58 : n <= 46 ? 48 : 40;
     return pt * base;
   }
@@ -287,14 +368,18 @@
     const brandKids = [logo ? (flyer.layout === 'block' ? h('span', { class: 'f-logo-tile' }, logo) : logo) : null,
       flyer.showBiz && t(b.name) ? h('span', { class: 'f-bizname', text: t(b.name) }) : null].filter(Boolean);
     const brand = brandKids.length ? h('div', { class: 'f-brand' }, brandKids) : null;
+    const quote = POSTS && flyer.starter === 'review';
+    if (quote) page.classList.add('is-quote');
+    const head = t(flyer.headline);
     const hero = h('div', { class: 'f-hero' },
       t(flyer.kicker) ? h('p', { class: 'f-kicker', text: t(flyer.kicker) }) : null,
-      h('h1', { class: 'f-head' + (t(flyer.headline) ? '' : ' f-empty'), text: t(flyer.headline) || 'Your headline' }),
-      t(flyer.sub) ? h('p', { class: 'f-sub', text: t(flyer.sub) }) : null);
-    const offer = t(flyer.offer) ? h('p', { class: 'f-offer', text: t(flyer.offer) }) : null;
-    const rows = [['When', flyer.when], ['Where', flyer.where]].filter(([, v]) => t(v));
+      h('h1', { class: 'f-head' + (head ? '' : ' f-empty'), text: head ? (quote ? `\u201C${head}\u201D` : head) : (quote ? 'The review goes here' : 'Your headline') }),
+      t(flyer.sub) ? h('p', { class: 'f-sub', text: quote ? `\u2014 ${t(flyer.sub)}` : t(flyer.sub) }) : null);
+    const offer = !hidden('offer') && t(flyer.offer) ? h('p', { class: 'f-offer', text: t(flyer.offer) }) : null;
+    const rowName = (STARTERS[flyer.starter].rows || {});
+    const rows = [[rowName.when || 'When', hidden('when') ? '' : flyer.when], ['Where', hidden('where') ? '' : flyer.where]].filter(([, v]) => t(v));
     const info = rows.length ? h('div', { class: 'f-info' }, rows.map(([l, v]) => h('div', { class: 'f-row' }, h('span', { class: 'f-lab', text: l }), h('span', { class: 'f-val', text: t(v) })))) : null;
-    const dets = flyer.details.map(t).filter(Boolean);
+    const dets = hidden('details') ? [] : flyer.details.map(t).filter(Boolean);
     const details = dets.length ? h('ul', { class: 'f-details' }, dets.map((d) => h('li', { text: d }))) : null;
     const cta = t(flyer.cta) ? h('p', { class: 'f-cta', text: t(flyer.cta) }) : null;
     const qu = qrUrl(flyer.qr.url);
@@ -351,9 +436,10 @@
     fitEl.classList.toggle('warn', !r.ok);
     fitEl.textContent = !r.ok ? 'Too much text for this size. Shorten the headline or remove a detail.'
       : r.s < 0.8 ? 'Fits, with smaller type. Fewer words will make it easier to read from a distance.'
-        : flyer.size === 'square' ? 'Fits. Square is for Instagram and Facebook posts: use Save image.' : 'Fits on one page.';
+        : POSTS ? 'Fits. Use Save image, then post it.'
+          : flyer.size === 'square' ? 'Fits. Square is for Instagram and Facebook posts: use Save image.' : 'Fits on one page.';
     $('size').value = flyer.size;
-    $('page-size').textContent = `@page { size: ${flyer.size === 'a4' ? 'A4' : flyer.size === 'square' ? '8in 8in' : 'letter'}; margin: 0; }`;
+    if ($('page-size')) $('page-size').textContent = `@page { size: ${flyer.size === 'a4' ? 'A4' : flyer.size === 'square' ? '8in 8in' : 'letter'}; margin: 0; }`;
     scalePreview();
   }
 
@@ -366,8 +452,13 @@
     'Bebas Neue': [['400', 'normal', 'bebas-neue-latin-400-normal']],
     Fraunces: [['400', 'normal', 'fraunces-latin-400-normal'], ['400', 'italic', 'fraunces-latin-400-italic'], ['600', 'normal', 'fraunces-latin-600-normal']],
     Inter: [['400', 'normal', 'inter-latin-400-normal'], ['500', 'normal', 'inter-latin-500-normal'], ['600', 'normal', 'inter-latin-600-normal']],
+    Anton: [['400', 'normal', 'anton-latin-400-normal']],
+    'Alfa Slab One': [['400', 'normal', 'alfa-slab-one-latin-400-normal']],
+    Rye: [['400', 'normal', 'rye-latin-400-normal']],
+    Lobster: [['400', 'normal', 'lobster-latin-400-normal']],
   };
-  const FAMILIES = { classic: ['EB Garamond'], elegant: ['Playfair Display', 'EB Garamond'], modern: ['Inter'], bold: ['Bebas Neue', 'Inter'], warm: ['Fraunces'] };
+  const FAMILIES = { classic: ['EB Garamond'], elegant: ['Playfair Display', 'EB Garamond'], modern: ['Inter'], bold: ['Bebas Neue', 'Inter'], warm: ['Fraunces'],
+    heavy: ['Anton', 'Inter'], slab: ['Alfa Slab One', 'Inter'], western: ['Rye', 'EB Garamond'], script: ['Lobster', 'Inter'] };
   const fontCache = {};
   const toDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
   async function fontCss() {
@@ -397,7 +488,7 @@
       const live = $('sheets').firstChild;
       const node = live.cloneNode(true);
       const w = live.offsetWidth; const hgt = live.offsetHeight;
-      const target = flyer.size === 'square' ? 1080 : Math.round(w / 96 * 150);
+      const target = flyer.size === 'square' || flyer.size === 'story' ? 1080 : Math.round(w / 96 * 150);
       const k = target / w;
       const css = (await fontCss()) + (await flyerCss());
       // An image drawn this way can't load anything from elsewhere: put the photo inside it.
@@ -438,17 +529,17 @@
     saving = (async () => {
       const now = new Date().toISOString();
       if (flyerId) {
-        const { error } = await db.from('flyers').update({ data: flyer, updated_at: now }).eq('id', flyerId).abortSignal(AbortSignal.timeout(10000));
+        const { error } = await db.from(TABLE).update({ data: flyer, updated_at: now }).eq('id', flyerId).abortSignal(AbortSignal.timeout(10000));
         if (error) throw error;
         const row = list.find((r) => r.id === flyerId); if (row) { row.data = JSON.parse(JSON.stringify(flyer)); row.updated_at = now; }
       } else {
-        const { data, error } = await db.from('flyers').insert({ data: flyer }).select('id, data, updated_at').single().abortSignal(AbortSignal.timeout(10000));
+        const { data, error } = await db.from(TABLE).insert({ data: flyer }).select('id, data, updated_at').single().abortSignal(AbortSignal.timeout(10000));
         if (error) throw error;
         flyerId = data.id; list.unshift(data); renderEditor();
       }
     })();
     try { await saving; $('save-state').textContent = 'Saved'; }
-    catch (e) { $('save-state').textContent = (e && /40 flyers/.test(e.message)) ? e.message : "Couldn't save. Check your connection."; }
+    catch (e) { $('save-state').textContent = (e && / saved\. Delete/.test(e.message)) ? e.message : "Couldn't save. Check your connection."; }
     finally { saving = null; }
   }
   const pending = () => uid && /Unsaved|Saving/.test($('save-state').textContent);
@@ -472,7 +563,7 @@
     if (!flyerId || !confirm(`Delete "${titleOf(flyer)}"? This can't be undone.`)) return;
     clearTimeout(saveTimer);
     try {
-      const { error } = await db.from('flyers').delete().eq('id', flyerId);
+      const { error } = await db.from(TABLE).delete().eq('id', flyerId);
       if (error) throw error;
       list = list.filter((r) => r.id !== flyerId);
       if (list.length) await openFlyer(list[0].id); else { flyerId = null; flyer = { ...blankFlyer(), biz: { ...flyer.biz } }; renderEditor(); renderPreview(); }
@@ -482,8 +573,8 @@
   window.addEventListener('beforeunload', (e) => { if (pending()) { save(); e.preventDefault(); } });
 
   // ---------- start ----------
-  $('size').addEventListener('change', (e) => { flyer.size = SIZES.includes(e.target.value) ? e.target.value : 'letter'; changed(); });
-  $('print').addEventListener('click', () => {
+  $('size').addEventListener('change', (e) => { flyer.size = SIZES.includes(e.target.value) ? e.target.value : SIZES[0]; changed(); });
+  if ($('print')) $('print').addEventListener('click', () => {
     renderPreview();
     $('print-root').replaceChildren($('sheets').firstChild.cloneNode(true));
     window.print();
@@ -509,17 +600,16 @@
     startPhotos();
     $('signout').hidden = false; $('pwbtn').hidden = false;
     try {
-      const { data, error } = await db.from('flyers').select('id, data, updated_at').order('updated_at', { ascending: false }).abortSignal(AbortSignal.timeout(10000));
+      const { data, error } = await db.from(TABLE).select('id, data, updated_at').order('updated_at', { ascending: false }).abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
       list = data || [];
+      // The saved menu: its dishes for "Use a dish from my menu", and its details for a first flyer or post.
+      let md = null;
+      try { const { data: m } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle(); md = m && m.data; } catch { /* no menu */ }
+      menuDishes = dishesOf(md);
       if (list.length) { flyerId = list[0].id; flyer = normalize(list[0].data || {}); $('save-state').textContent = 'Saved'; }
-      else {
-        // First flyer: start with the business details from the saved menu, if there is one.
-        const { data: m } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle();
-        const md = m && m.data;
-        if (md) flyer.biz = { name: md.name || '', phone: (md.footer && md.footer.phone) || '', website: (md.footer && md.footer.website) || '', address: (md.footer && md.footer.address) || '' };
-      }
-    } catch { $('save-state').textContent = "Couldn't load your flyers. Refresh to try again."; }
+      else if (md) flyer.biz = { name: md.name || '', phone: (md.footer && md.footer.phone) || '', website: (md.footer && md.footer.website) || '', address: (md.footer && md.footer.address) || '' };
+    } catch { $('save-state').textContent = `Couldn't load your ${NOUN}s. Refresh to try again.`; }
     $('editor').hidden = false;
     renderEditor();
     renderPreview();
