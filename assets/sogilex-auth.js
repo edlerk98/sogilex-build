@@ -9,7 +9,11 @@
 // Use: const client = supabase.createClient(url, key, { auth: SogilexAuth.clientOptions() });
 //      SogilexAuth.mountSignIn(el, { client, redirectTo, onSignedIn });
 //      SogilexAuth.mountPasswordForm(el, { client });
+// 3. Bot check: when TURNSTILE_SITE_KEY is set, every sign-in form shows a Cloudflare Turnstile check and sends its
+//    answer (captchaToken) with the request. Set the key and put this live BEFORE switching CAPTCHA on in Supabase
+//    (Authentication > Attack Protection): with CAPTCHA on and no answer sent, every sign-in fails.
 window.SogilexAuth = (() => {
+  const TURNSTILE_SITE_KEY = window.SOGILEX_TURNSTILE_SITE_KEY || ''; // public key from Cloudflare > Turnstile
   const STORAGE_KEY = 'sb-sogilex-auth';
   const LEGACY_KEY = 'sb-sdltqbctuieyjlujsdhj-auth-token'; // per-site localStorage, before shared sign-in
   const MODE_KEY = 'sogilex:auth-mode';
@@ -112,8 +116,52 @@ window.SogilexAuth = (() => {
       '.sx-auth .sx-link{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer;min-height:32px}',
       '.sx-auth .sx-code{letter-spacing:.3em;font-variant-numeric:tabular-nums;font-size:20px}',
       '.sx-auth .sx-note{margin:0;font-size:14px;opacity:.8}',
+      '.sx-auth .sx-captcha{min-height:65px}',
     ].join('\n') }));
   }
+  // ---------- bot check (Cloudflare Turnstile) ----------
+  let turnstileLoad = null;
+  function loadTurnstile() {
+    if (window.turnstile) return Promise.resolve(window.turnstile);
+    if (!turnstileLoad) {
+      turnstileLoad = new Promise((resolve, reject) => {
+        const sc = document.createElement('script');
+        sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        sc.async = true;
+        sc.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error('no turnstile')));
+        sc.onerror = () => { turnstileLoad = null; reject(new Error('blocked')); };
+        document.head.append(sc);
+      });
+    }
+    return turnstileLoad;
+  }
+  // One check per form. token() is '' until the check passes; reset() gives a fresh one (each answer works once).
+  function botCheck() {
+    if (!TURNSTILE_SITE_KEY) return { el: null, token: () => undefined, reset() {}, ready: () => true };
+    let token = ''; let wid = null; let failed = false;
+    const el = h('div', { class: 'sx-captcha' });
+    loadTurnstile().then((ts) => {
+      wid = ts.render(el, {
+        sitekey: TURNSTILE_SITE_KEY, theme: 'dark', size: 'flexible', action: 'sign-in',
+        callback: (t) => { token = t; },
+        'expired-callback': () => { token = ''; },
+        'error-callback': () => { token = ''; },
+      });
+    }).catch(() => { failed = true; });
+    return {
+      el,
+      token: () => token || undefined,
+      ready: () => !!token,
+      failed: () => failed,
+      reset() { token = ''; if (wid !== null && window.turnstile) window.turnstile.reset(wid); },
+    };
+  }
+  function needCheck(check, status) {
+    if (check.ready()) return false;
+    setStatus(status, check.failed && check.failed() ? "The security check didn't load. Check your connection and refresh the page." : 'One moment: finish the security check above the button.', 'err');
+    return true;
+  }
+
   function setStatus(el, text, kind) { el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
 
   // ---------- sign-in panel ----------
@@ -145,10 +193,11 @@ window.SogilexAuth = (() => {
         const pid = id('pw');
         const pw = h('input', { class: 'input', id: pid, type: 'password', name: 'password', autocomplete: 'current-password', required: true });
         const btn = h('button', { class: btnClass, type: 'submit', text: 'Sign in' });
+        const check = botCheck();
         form = h('form', { class: 'sx-auth', novalidate: true },
           email.el,
           h('div', { class: 'field' }, h('label', { for: pid, text: 'Password' }), pw),
-          btn, status,
+          check.el, btn, status,
           h('div', { class: 'sx-links' },
             link('Email me a code instead', () => { state.email = email.input.value.trim(); setMode('code'); go('code'); }),
             link('Forgot your password?', () => { state.email = email.input.value.trim(); go('code'); })));
@@ -156,43 +205,47 @@ window.SogilexAuth = (() => {
           e.preventDefault();
           if (!email.input.checkValidity()) { setStatus(status, 'Enter a valid email address.', 'err'); email.input.focus(); return; }
           if (!pw.value) { setStatus(status, 'Enter your password.', 'err'); pw.focus(); return; }
+          if (needCheck(check, status)) return;
           btn.disabled = true; setStatus(status, 'Signing in…');
           try {
-            const { data, error } = await within(client.auth.signInWithPassword({ email: email.input.value.trim(), password: pw.value }), 15000);
+            const { data, error } = await within(client.auth.signInWithPassword({ email: email.input.value.trim(), password: pw.value, options: { captchaToken: check.token() } }), 15000);
             if (error) throw error;
             setMode('password');
             done(data.session);
-          } catch (err) { setStatus(status, friendly(err, "Couldn't sign in."), 'err'); btn.disabled = false; }
+          } catch (err) { setStatus(status, friendly(err, "Couldn't sign in."), 'err'); btn.disabled = false; check.reset(); }
         });
       } else if (state.mode === 'code') {
         const email = emailField();
         const btn = h('button', { class: btnClass, type: 'submit', text: 'Email me a sign-in code' });
+        const check = botCheck();
         form = h('form', { class: 'sx-auth', novalidate: true },
-          email.el, btn, status,
+          email.el, check.el, btn, status,
           h('p', { class: 'sx-note', text: 'New here? The same code creates your Sogilex account.' }),
           h('div', { class: 'sx-links' }, link('Sign in with a password', () => { state.email = email.input.value.trim(); go('password'); })));
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
           if (!email.input.checkValidity()) { setStatus(status, 'Enter a valid email address.', 'err'); email.input.focus(); return; }
+          if (needCheck(check, status)) return;
           btn.disabled = true; setStatus(status, 'Sending…');
           try {
             const { error } = await within(client.auth.signInWithOtp({
               email: email.input.value.trim(),
-              options: { emailRedirectTo: opts.redirectTo || location.href.split('#')[0], shouldCreateUser: true },
+              options: { emailRedirectTo: opts.redirectTo || location.href.split('#')[0], shouldCreateUser: true, captchaToken: check.token() },
             }), 15000);
             if (error) throw error;
             state.email = email.input.value.trim();
             go('verify');
-          } catch (err) { setStatus(status, friendly(err, "Couldn't send the code."), 'err'); btn.disabled = false; }
+          } catch (err) { setStatus(status, friendly(err, "Couldn't send the code."), 'err'); btn.disabled = false; check.reset(); }
         });
       } else {
         const cid = id('code');
         const code = h('input', { class: 'input sx-code', id: cid, name: 'code', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', pattern: '[0-9]{6,10}', maxlength: '10', required: true });
         const btn = h('button', { class: btnClass, type: 'submit', text: 'Sign in' });
+        const check = botCheck();
         form = h('form', { class: 'sx-auth', novalidate: true },
           h('p', { class: 'sx-note' }, 'We sent a code to ', h('strong', { text: state.email }), '. Enter it here, or click the link in the email.'),
           h('div', { class: 'field' }, h('label', { for: cid, text: 'Sign-in code' }), code),
-          btn, status,
+          check.el, btn, status,
           h('div', { class: 'sx-links' },
             link('Send a new code', () => go('code')),
             link('Use a different email', () => { state.email = ''; go('code'); })));
@@ -200,12 +253,13 @@ window.SogilexAuth = (() => {
           e.preventDefault();
           const token = code.value.replace(/\D/g, '');
           if (token.length < 6) { setStatus(status, 'Enter the code from the email.', 'err'); code.focus(); return; }
+          if (needCheck(check, status)) return;
           btn.disabled = true; setStatus(status, 'Checking…');
           try {
-            const { data, error } = await within(client.auth.verifyOtp({ email: state.email, token, type: 'email' }), 15000);
+            const { data, error } = await within(client.auth.verifyOtp({ email: state.email, token, type: 'email', options: { captchaToken: check.token() } }), 15000);
             if (error) throw error;
             done(data.session);
-          } catch (err) { setStatus(status, friendly(err, "Couldn't sign in."), 'err'); btn.disabled = false; }
+          } catch (err) { setStatus(status, friendly(err, "Couldn't sign in."), 'err'); btn.disabled = false; check.reset(); }
         });
         setTimeout(() => code.focus(), 0);
       }
