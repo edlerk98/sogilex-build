@@ -644,7 +644,10 @@
           if (md) profile = { name: md.name || '', phone: (md.footer && md.footer.phone) || '', website: (md.footer && md.footer.website) || '', address: (md.footer && md.footer.address) || '' };
         } catch { /* no menu */ }
       }
-      if (docs.length) cur = { ...docs[0], data: normalizeData(docs[0].data) };
+      // From the account page: ?open=<id> opens that one instead of the latest.
+      const want = new URLSearchParams(location.search).get('open');
+      const first = docs.find((r) => r.id === want) || docs[0];
+      if (first) cur = { ...first, data: normalizeData(first.data) };
       say(cur && cur.status === 'draft' ? 'Saved' : '');
     } catch { say("Couldn't load your invoices. Refresh to try again."); }
     $('editor').hidden = false;

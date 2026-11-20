@@ -264,6 +264,15 @@
     refreshEdit(); refreshPublish();
     // Coming back to Build: show the latest site straight away, unless a build is already on screen.
     if (openLatest && builds.length && !html) {
+      // From the account page: ?open=<build id> opens that version instead of the latest.
+      const want = new URLSearchParams(location.search).get('open');
+      const pick = builds.find((b) => b.build_id === want);
+      if (pick) {
+        await openBuild(pick.build_id);
+        const st = $('build-status'); st.className = 'status ok';
+        st.textContent = `Opened from your account: the version from ${when(pick.created_at)}. To change it, type in "Change your site" above the preview.`;
+        return;
+      }
       await openBuild(builds[0].build_id);
       const st = $('build-status'); st.className = 'status ok';
       st.textContent = `This is your latest site, from ${when(builds[0].created_at)}. To change it, type in "Change your site" above the preview. You can also pick another version there, or build a new one.`;

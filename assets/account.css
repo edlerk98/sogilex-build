@@ -1,0 +1,51 @@
+/* Sogilex: your account. Reuses build.css and menus.css; this file is the list of saved things and the settings. */
+.acct-hero { padding-bottom: 32px; }
+.acct { display: flex; flex-direction: column; gap: 18px; }
+.acct-signin { max-width: 480px; padding: 22px; }
+.acct-load { margin: 0 0 14px; color: var(--mute); font-size: 15px; }
+.acct-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.acct-sec { padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#sec-sites, #sec-inv, #sec-settings { grid-column: 1 / -1; }
+.acct-sec-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.acct-sec-head .panel-h { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; }
+.acct-count { font-family: var(--mono); font-size: 12px; color: var(--mute); border: 1px solid var(--ctl); border-radius: 999px; padding: 2px 9px; }
+.acct-new, .acct-open { min-height: 40px; font-size: 14px; padding: 0 14px; }
+.acct-note { margin: 0; font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+.acct-note a { color: var(--lime); }
+.acct-hint { margin: 0; font-size: 13px; }
+.acct-empty { margin: 0; }
+.acct-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.acct-list.collapsed .acct-more { display: none; }
+.acct-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(18, 10, 24, .45); }
+.acct-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acct-row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-row-sub { font-size: 13px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-badge { flex: none; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--ctl); color: var(--mute); }
+.acct-badge.b-live, .acct-badge.b-paid { color: #8EE0A8; border-color: rgba(142, 224, 168, .5); }
+.acct-badge.b-open { color: #9EC5FF; border-color: rgba(158, 197, 255, .5); }
+.acct-badge.b-late { color: var(--warn); border-color: var(--warn); }
+.acct-badge.b-void { text-decoration: line-through; }
+.acct-all { align-self: flex-start; font-size: 14px; }
+.acct-brand { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.acct-logo { width: 160px; height: 90px; border-radius: 12px; background: #fff; display: grid; place-items: center; padding: 10px; flex: none; }
+.acct-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.acct-logo .muted { color: #6B5D52; font-size: 13px; }
+.acct-brand-text { flex: 1 1 220px; gap: 10px; }
+.acct-brand-text .btn { align-self: flex-start; }
+.acct-dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 18px; font-size: 15px; }
+.acct-dl dt { color: var(--mute); }
+.acct-dl dd { margin: 0; overflow-wrap: anywhere; }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.acct-actions .btn { min-height: 44px; font-size: 15px; }
+.acct-danger { margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.acct-danger h3 { margin: 0; font-size: 16px; color: var(--warn); }
+.acct-danger p { margin: 0; }
+.acct-del { align-self: flex-start; min-height: 44px; border-color: rgba(255, 107, 107, .5); }
+.acct-del:hover { border-color: var(--warn) !important; color: var(--warn); }
+@media (max-width: 760px) {
+  .acct-grid { grid-template-columns: minmax(0, 1fr); }
+  .acct-dl { grid-template-columns: minmax(0, 1fr); }
+  .acct-dl dd { margin-bottom: 6px; }
+  .acct-row { flex-wrap: wrap; }
+  .acct-row-main { flex-basis: 100%; }
+}

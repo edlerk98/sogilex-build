@@ -737,7 +737,10 @@
       let md = null;
       try { const { data: m } = await db.from('menus').select('data').eq('user_id', uid).maybeSingle(); md = m && m.data; } catch { /* no menu */ }
       menuDishes = dishesOf(md);
-      if (list.length) { flyerId = list[0].id; flyer = normalize(list[0].data || {}); $('save-state').textContent = 'Saved'; }
+      // From the account page: ?open=<id> opens that one instead of the latest.
+      const want = new URLSearchParams(location.search).get('open');
+      const first = list.find((r) => r.id === want) || list[0];
+      if (list.length) { flyerId = first.id; flyer = normalize(first.data || {}); $('save-state').textContent = 'Saved'; }
       else if (md) flyer.biz = { name: md.name || '', phone: (md.footer && md.footer.phone) || '', website: (md.footer && md.footer.website) || '', address: (md.footer && md.footer.address) || '' };
     } catch { $('save-state').textContent = `Couldn't load your ${NOUN}s. Refresh to try again.`; }
     $('editor').hidden = false;
