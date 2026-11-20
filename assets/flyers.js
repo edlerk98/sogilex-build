@@ -67,6 +67,7 @@
     if (!FONTS.some(([id]) => id === out.font)) out.font = 'modern';
     if (!LAYOUTS.some(([id]) => id === out.layout)) out.layout = 'poster';
     if (out.palette !== 'logo' && !PALETTES.some(([id]) => id === out.palette)) out.palette = 'cream';
+    out.photo = typeof out.photo === 'string' && out.photo ? out.photo : null;
     return out;
   }
 
@@ -75,6 +76,28 @@
   let list = []; // [{ id, data, updated_at }]
   let uid = null;
   let kit = { logo: null, logo_name: null, colors: [] };
+
+  // ---------- photos (the same private library as Build's "Your photos") ----------
+  let photos = []; let photoBox = null; let photoBoxEl = null;
+  const photoUrl = (id) => (photoBox && photoBox.links[id]) || null;
+  const photoName = (id) => { const p = photos.find((x) => x.id === id); return p ? (p.name || '').trim() : ''; };
+  function startPhotos() {
+    if (!window.SogilexPhotos || photoBoxEl) return;
+    photoBoxEl = h('div', { class: 'm-photos' });
+    photoBox = SogilexPhotos.mount(photoBoxEl, {
+      db, uid,
+      onChange: (list) => {
+        photos = list;
+        if (flyer.photo && !list.some((p) => p.id === flyer.photo)) flyer.photo = null; // removed from the library
+        const sel = $('f-photo');
+        if (sel) {
+          sel.replaceChildren(h('option', { value: '', text: 'No photo' }),
+            ...photos.map((p, i) => h('option', { value: p.id, selected: flyer.photo === p.id ? true : null, text: p.name.trim() || `Photo ${i + 1}` })));
+        }
+        clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 120);
+      },
+    });
+  }
 
   function paletteOf(id) {
     if (id === 'logo' && kit.colors && kit.colors[0] && window.SogilexBrand) return ['logo', 'My logo', '#FBF8F2', '#221C18', '#6B5D52', SogilexBrand.readableOnLight(kit.colors[0])];
@@ -165,6 +188,17 @@
     const b = flyer.biz;
     const logoBox = h('div');
     if (uid && window.SogilexBrand) SogilexBrand.mountLogo(logoBox, { db, uid, kit, onChange: (k) => { kit = { ...kit, ...k }; renderEditor(); renderPreview(); } });
+    if (uid && photoBoxEl) {
+      const sel = h('select', { class: 'mselect', id: 'f-photo', onchange: (e) => { flyer.photo = e.target.value || null; changed(); } },
+        h('option', { value: '', text: 'No photo' }),
+        ...photos.map((p, i) => h('option', { value: p.id, selected: flyer.photo === p.id ? true : null, text: p.name.trim() || `Photo ${i + 1}` })));
+      wrap.append(h('div', { class: 'mgroup' },
+        h('h3', { text: 'Photo' }),
+        h('p', { class: 'mhint', text: 'One of your own photos: the dish, the band, the room. The same photos your website and menu use. Leave it out and the headline does the work.' }),
+        h('div', { class: 'mrow' }, h('label', { class: 'mini', for: 'f-photo' }, 'Photo on the flyer'), sel),
+        photoBoxEl));
+    }
+
     wrap.append(h('div', { class: 'mgroup' },
       h('h3', { text: 'Your business' }),
       field(b, 'name', { maxlength: '60', placeholder: 'Business name', 'aria-label': 'Business name' }),
@@ -272,8 +306,11 @@
     // Top (brand), middle (the message and facts, centred in the free space), bottom (footer).
     const inner = h('div', { class: 'f-inner' });
     const mid = h('div', { class: 'f-mid' });
-    if (flyer.layout === 'block') inner.append(h('div', { class: 'f-band' }, brand, hero));
-    else { if (brand) inner.append(brand); mid.append(hero); }
+    const purl = flyer.photo ? photoUrl(flyer.photo) : null;
+    const photo = purl ? h('img', { class: 'f-photo', src: purl, alt: photoName(flyer.photo) || t(flyer.headline) || 'Photo' }) : null;
+    if (photo) page.classList.add('has-photo');
+    if (flyer.layout === 'block') inner.append(h('div', { class: 'f-band' }, brand, hero), photo || '');
+    else { if (brand) inner.append(brand); mid.append(...[hero, photo].filter(Boolean)); }
     mid.append(...[offer, info, details, cta].filter(Boolean));
     inner.append(mid);
     if (foot) inner.append(foot);
@@ -363,6 +400,10 @@
       const target = flyer.size === 'square' ? 1080 : Math.round(w / 96 * 150);
       const k = target / w;
       const css = (await fontCss()) + (await flyerCss());
+      // An image drawn this way can't load anything from elsewhere: put the photo inside it.
+      for (const im of node.querySelectorAll('img')) {
+        if (/^https?:/.test(im.src)) im.src = await toDataUrl(await (await fetch(im.src)).blob());
+      }
       const xhtml = new XMLSerializer().serializeToString(node);
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * k}" height="${hgt * k}" viewBox="0 0 ${w} ${hgt}"><foreignObject x="0" y="0" width="${w}" height="${hgt}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/</g, '\\3c ')}</style>${xhtml}</div></foreignObject></svg>`;
       const img = new Image();
@@ -465,6 +506,7 @@
     }
     uid = s.user.id;
     if (window.SogilexBrand) kit = await SogilexBrand.load(db, uid);
+    startPhotos();
     $('signout').hidden = false; $('pwbtn').hidden = false;
     try {
       const { data, error } = await db.from('flyers').select('id, data, updated_at').order('updated_at', { ascending: false }).abortSignal(AbortSignal.timeout(10000));

@@ -94,6 +94,17 @@
 .layout-left .f-details li::before { content: ""; position: absolute; left: 0; top: .6em; width: 6pt; height: 1.5pt; background: var(--f-accent); }
 .layout-left .f-mid { margin-top: 0; }
 .layout-left .f-foot { margin-top: auto; }
+/* the photo: a fixed height that shrinks with the text, so fitting never waits for the image to load */
+.f-photo { display: block; width: 100%; height: calc(3.1in * var(--s)); object-fit: cover; border-radius: 8pt; }
+.size-square .f-photo { height: calc(2.3in * var(--s)); }
+.layout-poster .f-photo { border-radius: 10pt; }
+/* Colour block: the photo sits right under the band, edge to edge */
+.layout-block .f-photo { width: auto; margin: calc(-18pt * var(--s)) -.7in 0; border-radius: 0; height: calc(3.3in * var(--s)); }
+.size-square.layout-block .f-photo { margin: calc(-18pt * var(--s)) -.6in 0; height: calc(2.2in * var(--s)); }
+.layout-block.has-photo .f-band { padding-bottom: calc(20pt * var(--s)); }
+.layout-block.has-photo .f-inner { gap: calc(18pt * var(--s)); }
+/* Left-aligned: a framed photo with the accent colour on its left edge */
+.layout-left .f-photo { border-radius: 0; border-left: calc(8pt * var(--s)) solid var(--f-accent); }
 /* ===== end flyer page ===== */
 
 @media print {
