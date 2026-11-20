@@ -26,14 +26,24 @@
   <div class="wrap row">
     <a class="mark" href="https://sogilex.com/" aria-label="Sogilex home"><svg width="32" height="26" aria-hidden="true"><use href="#mark"/></svg><span class="wordmark">SOGILEX</span><span class="product">Invoices</span></a>
     <nav aria-label="Main">
-      <a href="../">Websites</a>
-      <a href="../menus/">Menus</a>
-      <a href="../flyers/">Flyers</a>
-      <a href="../posts/">Posts</a>
-      <a href="./" aria-current="page">Invoices</a>
-      <a href="../account/">Account</a>
-      <button class="navbtn" type="button" id="pwbtn" hidden aria-haspopup="dialog">Password</button>
-      <button class="navbtn" type="button" id="signout" hidden>Sign out</button>
+      <details class="navmenu">
+        <summary>Tools</summary>
+        <div class="navmenu-panel">
+          <a href="../">Websites</a>
+          <a href="../menus/">Menus</a>
+          <a href="../flyers/">Flyers</a>
+          <a href="../posts/">Posts</a>
+          <a href="../invoices/" aria-current="page">Invoices</a>
+        </div>
+      </details>
+      <details class="navmenu navmenu-right">
+        <summary>Account</summary>
+        <div class="navmenu-panel">
+          <a href="../account/">Your account</a>
+          <button class="navmenu-btn" type="button" id="pwbtn" hidden aria-haspopup="dialog">Password</button>
+          <button class="navmenu-btn" type="button" id="signout" hidden>Sign out</button>
+        </div>
+      </details>
     </nav>
   </div>
 </header>
@@ -90,6 +100,7 @@
 
 <script src="../assets/vendor/supabase.js"></script>
 <script src="../assets/sogilex-auth.js"></script>
+<script src="../assets/nav.js" defer></script>
 <script src="../assets/brand.js" defer></script>
 <script src="../assets/invoices.js" defer></script>
 <script src="../assets/scene.js" defer></script>
