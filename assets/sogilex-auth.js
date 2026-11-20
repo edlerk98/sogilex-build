@@ -13,7 +13,7 @@
 //    answer (captchaToken) with the request. Set the key and put this live BEFORE switching CAPTCHA on in Supabase
 //    (Authentication > Attack Protection): with CAPTCHA on and no answer sent, every sign-in fails.
 window.SogilexAuth = (() => {
-  const TURNSTILE_SITE_KEY = window.SOGILEX_TURNSTILE_SITE_KEY || ''; // public key from Cloudflare > Turnstile
+  const TURNSTILE_SITE_KEY = window.SOGILEX_TURNSTILE_SITE_KEY || '0x4AAAAAAGKuTNjS5HAc2lze'; // public key from Cloudflare > Turnstile
   const STORAGE_KEY = 'sb-sogilex-auth';
   const LEGACY_KEY = 'sb-sdltqbctuieyjlujsdhj-auth-token'; // per-site localStorage, before shared sign-in
   const MODE_KEY = 'sogilex:auth-mode';
