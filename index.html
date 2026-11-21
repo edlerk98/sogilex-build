@@ -78,6 +78,12 @@
           <label for="desc">Describe the site</label>
           <textarea class="input" id="desc" maxlength="1500" rows="6" required placeholder="A one-page site for a mobile dog-walking service in a small town. Friendly, outdoorsy, with a services section and a way to get in touch."></textarea>
           <span class="hint"><span id="desc-count">0</span> / 1,500</span>
+          <details class="protip">
+            <summary>Pro tip: let an AI write your description</summary>
+            <p>Copy this prompt into ChatGPT, Claude or any AI assistant, fill in your facts, then paste its answer in the box above. Read it before you build: check every fact.</p>
+            <p class="protip-prompt" id="protip-prompt">Write a description of my business for a website builder. Keep it under 1,500 characters. Include the business name, what we offer, who it's for, the area we serve, our hours, how people should contact us, and the feel I want for the site (for example friendly, modern or upscale). Use only the facts I give you: don't make up prices, awards, reviews or years in business. My facts: [write your facts here]</p>
+            <button class="ghost protip-copy" type="button" id="protip-copy">Copy prompt</button>
+          </details>
         </div>
         <div class="field">
           <label for="name">Name <span class="opt">(optional)</span></label>
@@ -142,6 +148,7 @@
         <form id="edit-form" class="edit-form" novalidate>
           <label class="sr-only" for="edit-msg">What would you like to change?</label>
           <textarea class="input" id="edit-msg" rows="2" maxlength="1000" placeholder="For example: change the headline to &quot;Capturing your moments&quot;, or add a section about wedding packages"></textarea>
+          <p class="protip-line">Pro tip: ask for one change at a time and say exactly where, for example "in the hours section, change Sunday to closed". Up to 1,000 characters.</p>
           <div class="edit-row">
             <button class="ghost" type="button" id="undo" hidden>Undo last change</button>
             <button class="btn" type="submit" id="edit-go">Make this change</button>

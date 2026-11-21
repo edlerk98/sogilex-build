@@ -291,3 +291,15 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
   /* On phones the menu bar sits on its own line at the left, so both menus open to the right. */
   .navmenu-right .navmenu-panel { left: 0; right: auto; }
 }
+
+/* ---------- pro tips (Build) ---------- */
+.protip { margin-top: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; background: rgba(18, 10, 24, .45); }
+.protip > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--lime); }
+.protip > summary::-webkit-details-marker { display: none; }
+.protip > summary::before { content: "💡"; }
+.protip > summary::after { content: "▾"; margin-left: auto; color: var(--mute); transition: transform .15s ease; }
+.protip[open] > summary::after { transform: rotate(180deg); }
+.protip p { margin: 0 0 10px; font-size: 14px; color: var(--mute); }
+.protip-prompt { padding: 12px; border-radius: 10px; border: 1px dashed var(--ctl); background: #120A18; color: var(--text) !important; font-size: 13px !important; line-height: 1.5; user-select: all; }
+.protip-copy { margin-bottom: 14px; min-height: 40px; font-size: 14px; }
+.protip-line { margin: 6px 0 0; font-size: 13px; color: var(--mute); }

@@ -120,6 +120,13 @@
 
   // ---------- the brief ----------
   $('desc').addEventListener('input', () => { $('desc-count').textContent = $('desc').value.length.toLocaleString(); });
+  // Pro tip: copy the starter prompt for writing a description with any AI assistant.
+  $('protip-copy').addEventListener('click', async () => {
+    const btn = $('protip-copy'); const text = $('protip-prompt').textContent.trim();
+    try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
+    catch { const r = document.createRange(); r.selectNodeContents($('protip-prompt')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = 'Selected: press Ctrl+C (or Cmd+C)'; }
+    setTimeout(() => { btn.textContent = 'Copy prompt'; }, 2500);
+  });
   document.querySelectorAll('.swatches button').forEach((b) => b.addEventListener('click', () => {
     $('accent').value = b.dataset.c; $('accent-auto').checked = false;
   }));
