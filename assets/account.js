@@ -90,7 +90,7 @@
     const list = builds.data || [];
     const items = list.map((b) => ({
       title: decode(b.title) || 'Untitled site',
-      sub: `${b.kind === 'edit' ? `Changed: ${b.note || 'edited'}` : 'Built'} · ${day(b.created_at)}`,
+      sub: `${b.kind === 'edit' || b.kind === 'manual' ? `Changed: ${b.note || 'edited'}` : 'Built'} · ${day(b.created_at)}`,
       badge: b.live ? 'Published' : null, badgeClass: 'b-live',
       href: `../?open=${encodeURIComponent(b.build_id)}`,
       del: b.live ? null : () => must(db.rpc('delete_my_build', { p_id: b.build_id })),

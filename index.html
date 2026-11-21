@@ -160,6 +160,16 @@
         <span class="addr" id="addr">your-site.html</span>
         <span class="size" id="size" aria-live="off"></span>
       </div>
+      <div class="adjust-bar" id="adjust-bar" hidden>
+        <p class="adjust-msg" id="adjust-msg" role="status" aria-live="polite"></p>
+        <div class="adjust-row">
+          <label class="check-inline"><input type="checkbox" id="adjust-whole" disabled> Show the whole photo</label>
+          <button class="ghost" type="button" id="adjust-reset" disabled>Reset this photo</button>
+          <span class="adjust-gap"></span>
+          <button class="ghost" type="button" id="adjust-cancel">Cancel</button>
+          <button class="btn" type="button" id="adjust-save">Save photo changes</button>
+        </div>
+      </div>
       <div class="frame-wrap">
         <iframe id="frame" title="Preview of your generated website" sandbox=""></iframe>
         <div class="empty" id="empty">
@@ -171,6 +181,7 @@
         <button class="btn" type="button" id="download" disabled>Download .html</button>
         <button class="ghost" type="button" id="copy" disabled>Copy code</button>
         <button class="ghost" type="button" id="newtab" disabled>Open full size</button>
+        <button class="ghost" type="button" id="adjust" disabled title="Move or show the whole of a photo, by hand">Adjust photos</button>
       </div>
       <section class="publish" id="publish" hidden aria-labelledby="pub-h">
         <div class="panel-row">

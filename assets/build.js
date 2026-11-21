@@ -16,6 +16,7 @@
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
 
   let html = '';
+  const adj = { on: false, changes: {}, sel: null, base: '' }; // the photo adjuster (see "Adjust photos")
   let kit = { logo: null, logo_name: null, colors: [] }; // brand kit: logo + its colours
   const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
   // Generated sites refer to the logo as src="sogilex:logo"; swap in the real image wherever the site is shown or saved.
@@ -288,7 +289,7 @@
     sel.replaceChildren(...builds.map((b) => {
       const o = document.createElement('option');
       o.value = b.build_id;
-      const note = b.kind === 'edit' ? ` · ${short(b.note || 'edited')}` : '';
+      const note = b.kind === 'edit' || b.kind === 'manual' ? ` · ${short(b.note || 'edited')}` : '';
       o.textContent = `${decode(b.title) || 'Untitled site'} · ${when(b.created_at)}${note}${b.live ? ' · live' : ''}`;
       return o;
     }));
@@ -503,6 +504,7 @@
   // ---------- preview ----------
   let paintTimer = null;
   function paint(final) {
+    if (adj.on) return; // the photo adjuster owns the preview until it's saved or cancelled
     const doc = withLogo(final ? html : html + '\n</body></html>');
     $('frame').srcdoc = doc;
     $('empty').hidden = html.length > 0;
@@ -511,7 +513,180 @@
   }
   function schedulePaint() { if (!paintTimer) paintTimer = setTimeout(() => { paintTimer = null; paint(false); }, 700); }
   const slug = (s) => (s || 'my-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'my-site';
-  function setDone(enabled) { ['download', 'copy', 'newtab'].forEach((id) => { $(id).disabled = !enabled; }); }
+  function setDone(enabled) {
+    ['download', 'copy', 'newtab'].forEach((id) => { $(id).disabled = !enabled; });
+    $('adjust').disabled = !(enabled && html.includes('sogilex:photo:'));
+  }
+
+  // ---------- Adjust photos (by hand, no AI) ----------
+  // Click a photo in the preview, then drag it to choose which part shows in its frame (object-position), or tick
+  // "Show the whole photo" (object-fit: contain). Saved as a new version with save_manual_version (022): no AI, so it
+  // doesn't use a change or a build, and Undo goes back. The preview still runs no code: while adjusting, the frame is
+  // sandboxed with allow-same-origin only (no allow-scripts), so Build can reach the photos but the page can't run.
+  const isPhoto = (im) => /^sogilex:photo:/.test(im.getAttribute('src') || '');
+  const photoImgs = (d) => [...d.querySelectorAll('img')].filter(isPhoto);
+  const clampPct = (v) => Math.max(0, Math.min(100, v));
+  const setAdjMsg = (t, err) => { const m = $('adjust-msg'); m.textContent = t; m.classList.toggle('err', !!err); };
+  function serialize(d) { return '<!doctype html>\n' + d.documentElement.outerHTML; }
+  function taggedHtml(src) {
+    const d = new DOMParser().parseFromString(src, 'text/html');
+    photoImgs(d).forEach((im, i) => im.setAttribute('data-sxi', String(i)));
+    return serialize(d);
+  }
+  function applyChanges(src, changes) {
+    const d = new DOMParser().parseFromString(src, 'text/html');
+    photoImgs(d).forEach((im, i) => {
+      const c = changes[i]; if (!c) return;
+      if (c.fit) im.style.objectFit = c.fit;
+      if (c.fit === 'contain') im.style.removeProperty('object-position');
+      else if (c.pos) im.style.objectPosition = c.pos;
+    });
+    return serialize(d);
+  }
+  // The photo's current position as percentages (the browser may report pixels or keywords).
+  function currentPos(im, win) {
+    const parts = win.getComputedStyle(im).objectPosition.split(' ');
+    const ov = overflow(im, win);
+    const one = (v, o) => {
+      if (/%$/.test(v)) return parseFloat(v);
+      if (v === 'left' || v === 'top') return 0;
+      if (v === 'right' || v === 'bottom') return 100;
+      if (v === 'center') return 50;
+      if (/px$/.test(v) && o > 0) return clampPct((-parseFloat(v) / o) * 100);
+      return 50;
+    };
+    return [one(parts[0] || '50%', ov.x), one(parts[1] || parts[0] || '50%', ov.y)];
+  }
+  // How much of the photo is hidden outside its frame (only "cover" photos can be moved).
+  function overflow(im, win) {
+    const cs = win.getComputedStyle(im);
+    if (cs.objectFit !== 'cover' || !im.naturalWidth) return { x: 0, y: 0, movable: false };
+    const bw = im.clientWidth; const bh = im.clientHeight;
+    const sc = Math.max(bw / im.naturalWidth, bh / im.naturalHeight);
+    const x = im.naturalWidth * sc - bw; const y = im.naturalHeight * sc - bh;
+    return { x, y, movable: x > 1 || y > 1 };
+  }
+  function selectPhoto(im) {
+    const doc = $('frame').contentDocument;
+    doc.querySelectorAll('img.sx-sel').forEach((x) => x.classList.remove('sx-sel'));
+    adj.sel = im; im.classList.add('sx-sel');
+    const win = doc.defaultView;
+    $('adjust-whole').disabled = false; $('adjust-reset').disabled = false;
+    $('adjust-whole').checked = win.getComputedStyle(im).objectFit === 'contain';
+    const ov = overflow(im, win);
+    setAdjMsg($('adjust-whole').checked ? 'Showing the whole photo. Untick it to fill the frame again.'
+      : ov.movable ? 'Drag the photo to choose what shows, or use the arrow keys. Then save.'
+        : 'This photo already fits its frame, so there is nothing to move. You can still show the whole photo.');
+  }
+  function record(im) {
+    const i = Number(im.getAttribute('data-sxi'));
+    const win = $('frame').contentDocument.defaultView;
+    const fit = win.getComputedStyle(im).objectFit;
+    adj.changes[i] = { fit: fit === 'contain' ? 'contain' : 'cover', pos: im.style.objectPosition || null };
+    $('adjust-save').disabled = false;
+  }
+  function moveBy(im, dx, dy) {
+    const win = $('frame').contentDocument.defaultView;
+    const ov = overflow(im, win); if (!ov.movable) return;
+    const [x, y] = currentPos(im, win);
+    im.style.objectPosition = `${clampPct(x + dx).toFixed(1)}% ${clampPct(y + dy).toFixed(1)}%`;
+    record(im);
+  }
+  function wireFrame() {
+    const doc = $('frame').contentDocument; if (!doc) return;
+    const win = doc.defaultView;
+    const st = doc.createElement('style');
+    st.textContent = 'img[data-sxi]{cursor:grab;outline:2px dashed rgba(255,154,77,.95);outline-offset:-2px;touch-action:none;user-select:none}'
+      + 'img[data-sxi].sx-sel{outline:3px solid #F2496B;outline-offset:-3px}img[data-sxi].sx-drag{cursor:grabbing}';
+    doc.head.append(st);
+    // Links and forms don't work while adjusting (clicks choose photos).
+    doc.addEventListener('click', (e) => { if (e.target.closest('a, button, form')) e.preventDefault(); }, true);
+    doc.addEventListener('submit', (e) => e.preventDefault(), true);
+    const imgs = [...doc.querySelectorAll('img[data-sxi]')];
+    if (!imgs.length) { setAdjMsg('There are no photos of yours on this version.', true); return; }
+    imgs.forEach((im) => {
+      im.draggable = false;
+      im.dataset.sxStartPos = im.style.objectPosition || '';
+      im.dataset.sxStartFit = im.style.objectFit || '';
+      im.addEventListener('dragstart', (e) => e.preventDefault());
+      im.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        selectPhoto(im);
+        const ov = overflow(im, win); if (!ov.movable) return;
+        const [sx, sy] = currentPos(im, win);
+        const x0 = e.clientX; const y0 = e.clientY;
+        im.setPointerCapture(e.pointerId); im.classList.add('sx-drag');
+        const move = (ev) => {
+          // Dragging moves the photo with the pointer, so the hidden part slides into view.
+          const nx = ov.x > 1 ? clampPct(sx - ((ev.clientX - x0) / ov.x) * 100) : sx;
+          const ny = ov.y > 1 ? clampPct(sy - ((ev.clientY - y0) / ov.y) * 100) : sy;
+          im.style.objectPosition = `${nx.toFixed(1)}% ${ny.toFixed(1)}%`;
+        };
+        const up = () => { im.removeEventListener('pointermove', move); im.removeEventListener('pointerup', up); im.removeEventListener('pointercancel', up); im.classList.remove('sx-drag'); record(im); };
+        im.addEventListener('pointermove', move); im.addEventListener('pointerup', up); im.addEventListener('pointercancel', up);
+      });
+    });
+    setAdjMsg(`Click a photo (${imgs.length} on this page), then drag it to choose what shows.`);
+  }
+  function startAdjust() {
+    if (!html || building || editing || !lastBuildId) return;
+    adj.on = true; adj.changes = {}; adj.sel = null; adj.base = html;
+    const f = $('frame');
+    f.setAttribute('sandbox', 'allow-same-origin');
+    f.onload = wireFrame;
+    f.srcdoc = withLogo(taggedHtml(html));
+    $('adjust-bar').hidden = false; $('adjust-save').disabled = true; $('adjust-whole').disabled = true; $('adjust-reset').disabled = true;
+    ['download', 'copy', 'newtab', 'adjust', 'edit-go'].forEach((id) => { if ($(id)) $(id).disabled = true; });
+    setAdjMsg('Loading your photos…');
+    $('adjust-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function stopAdjust() {
+    adj.on = false; adj.sel = null;
+    const f = $('frame'); f.onload = null; f.setAttribute('sandbox', '');
+    $('adjust-bar').hidden = true;
+    if ($('edit-go')) $('edit-go').disabled = false;
+    paint(true); setDone(builtOk);
+  }
+  async function saveAdjust() {
+    const n = Object.keys(adj.changes).length;
+    if (!n) { stopAdjust(); return; }
+    const out = applyChanges(adj.base, adj.changes);
+    $('adjust-save').disabled = true; setAdjMsg('Saving…');
+    try {
+      const { data, error } = await db.rpc('save_manual_version', { p_parent: lastBuildId, p_html: out, p_note: n === 1 ? 'Adjusted a photo' : `Adjusted ${n} photos` }).abortSignal(AbortSignal.timeout(15000));
+      if (error) throw error;
+      stopAdjust();
+      await loadBuilds(false);
+      await openBuild(data, true);
+      const st = $('build-status'); st.className = 'status ok';
+      st.textContent = 'Photo changes saved as a new version. Undo goes back. This didn\'t use any of your changes.';
+    } catch (e) {
+      $('adjust-save').disabled = false;
+      setAdjMsg((e && e.message && !/fetch|network|timeout|abort/i.test(e.message)) ? e.message : "Couldn't save. Check your connection and try again.", true);
+    }
+  }
+  $('adjust').addEventListener('click', startAdjust);
+  $('adjust-cancel').addEventListener('click', stopAdjust);
+  $('adjust-save').addEventListener('click', saveAdjust);
+  $('adjust-whole').addEventListener('change', (e) => {
+    const im = adj.sel; if (!im) return;
+    im.style.objectFit = e.target.checked ? 'contain' : 'cover';
+    if (e.target.checked) im.style.removeProperty('object-position');
+    record(im); selectPhoto(im);
+  });
+  $('adjust-reset').addEventListener('click', () => {
+    const im = adj.sel; if (!im) return;
+    im.style.objectPosition = im.dataset.sxStartPos || ''; im.style.objectFit = im.dataset.sxStartFit || '';
+    delete adj.changes[Number(im.getAttribute('data-sxi'))];
+    $('adjust-save').disabled = !Object.keys(adj.changes).length;
+    selectPhoto(im);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!adj.on || !adj.sel || !/^Arrow/.test(e.key) || /input|textarea|select/i.test((document.activeElement || {}).tagName || '')) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 2;
+    moveBy(adj.sel, e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0);
+  });
 
   // Strip anything before <!doctype / <html and after </html>, in case the model adds stray text.
   function clean(text) {
