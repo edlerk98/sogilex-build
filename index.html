@@ -172,11 +172,36 @@
       <div class="adjust-bar" id="adjust-bar" hidden>
         <p class="adjust-msg" id="adjust-msg" role="status" aria-live="polite"></p>
         <div class="adjust-row">
-          <label class="check-inline"><input type="checkbox" id="adjust-whole" disabled> Show the whole photo</label>
+          <label class="adjust-shape-l" for="adjust-shape">Frame shape</label>
+          <select class="input adjust-shape" id="adjust-shape" disabled>
+            <option value="design">As designed</option>
+            <option value="own">Photo's own shape (whole photo)</option>
+            <option value="wide">Wide (16:9)</option>
+            <option value="land">Landscape (3:2)</option>
+            <option value="square">Square</option>
+            <option value="portrait">Portrait (4:5)</option>
+            <option value="tall">Tall (2:3)</option>
+            <option value="contain">Whole photo inside the frame</option>
+          </select>
           <button class="ghost" type="button" id="adjust-reset" disabled>Reset this photo</button>
-          <span class="adjust-gap"></span>
-          <button class="ghost" type="button" id="adjust-cancel">Cancel</button>
-          <button class="btn" type="button" id="adjust-save">Save photo changes</button>
+          <span class="adjust-actions"><button class="ghost" type="button" id="adjust-cancel">Cancel</button><button class="btn" type="button" id="adjust-save">Save photo changes</button></span>
+        </div>
+      </div>
+      <div class="adjust-bar" id="words-bar" hidden>
+        <p class="adjust-msg" id="words-msg" role="status" aria-live="polite"></p>
+        <form class="adjust-row ph-row" id="ph-form" novalidate>
+          <div class="ph-fields" id="ph-row" hidden>
+            <label class="ph-label" for="ph-input" id="ph-label"></label>
+            <input class="input ph-input" id="ph-input" type="text" maxlength="120" autocomplete="off">
+            <button class="btn" type="submit" id="ph-fill">Fill in everywhere</button>
+            <button class="ghost" type="button" id="ph-skip">Skip</button>
+            <button class="ghost" type="button" id="ph-done">Done</button>
+          </div>
+        </form>
+        <div class="adjust-row">
+          <button class="ghost" type="button" id="words-next" hidden>Fill in placeholders</button>
+          <button class="ghost" type="button" id="words-all" hidden></button>
+          <span class="adjust-actions"><button class="ghost" type="button" id="words-cancel">Cancel</button><button class="btn" type="button" id="words-save" disabled>Save word changes</button></span>
         </div>
       </div>
       <div class="frame-wrap">
@@ -190,7 +215,8 @@
         <button class="btn" type="button" id="download" disabled>Download .html</button>
         <button class="ghost" type="button" id="copy" disabled>Copy code</button>
         <button class="ghost" type="button" id="newtab" disabled>Open full size</button>
-        <button class="ghost" type="button" id="adjust" disabled title="Move or show the whole of a photo, by hand">Adjust photos</button>
+        <button class="ghost" type="button" id="words" disabled title="Click any words on the page and type">Edit words</button>
+        <button class="ghost" type="button" id="adjust" disabled title="Choose each photo's frame shape and what part shows">Adjust photos</button>
       </div>
       <section class="publish" id="publish" hidden aria-labelledby="pub-h">
         <div class="panel-row">

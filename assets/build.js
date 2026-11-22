@@ -16,7 +16,7 @@
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
 
   let html = '';
-  const adj = { on: false, changes: {}, sel: null, base: '' }; // the photo adjuster (see "Adjust photos")
+  const adj = { on: false, changes: {}, kinds: {}, sel: null, base: '' }; // the photo adjuster (see "Adjust photos")
   let kit = { logo: null, logo_name: null, colors: [] }; // brand kit: logo + its colours
   const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
   // Generated sites refer to the logo as src="sogilex:logo"; swap in the real image wherever the site is shown or saved.
@@ -680,7 +680,7 @@
   // ---------- preview ----------
   let paintTimer = null;
   function paint(final) {
-    if (adj.on) return; // the photo adjuster owns the preview until it's saved or cancelled
+    if (adj.on || words.on) return; // Adjust photos / Edit words own the preview until saved or cancelled
     const doc = withLogo(final ? html : html + '\n</body></html>');
     $('frame').srcdoc = doc;
     $('empty').hidden = html.length > 0;
@@ -692,31 +692,106 @@
   function setDone(enabled) {
     ['download', 'copy', 'newtab'].forEach((id) => { $(id).disabled = !enabled; });
     $('adjust').disabled = !(enabled && html.includes('sogilex:photo:'));
+    $('words').disabled = !(enabled && lastBuildId);
   }
 
-  // ---------- Adjust photos (by hand, no AI) ----------
-  // Click a photo in the preview, then drag it to choose which part shows in its frame (object-position), or tick
-  // "Show the whole photo" (object-fit: contain). Saved as a new version with save_manual_version (022): no AI, so it
-  // doesn't use a change or a build, and Undo goes back. The preview still runs no code: while adjusting, the frame is
-  // sandboxed with allow-same-origin only (no allow-scripts), so Build can reach the photos but the page can't run.
+  // ---------- Edit by hand: Adjust photos and Edit words (no AI) ----------
+  // Both save a new version with save_manual_version (022): no AI, so they don't use a change or a build, and Undo goes
+  // back. The preview still runs no code: while editing, the frame is sandboxed with allow-same-origin only (no
+  // allow-scripts), so Build can reach the page but the page can't run anything.
+  // Changes are worked out in the live preview, then applied to a fresh copy of the saved page (matched by position),
+  // so the private photo links shown in the preview never end up in the saved page.
   const isPhoto = (im) => /^sogilex:photo:/.test(im.getAttribute('src') || '');
   const photoImgs = (d) => [...d.querySelectorAll('img')].filter(isPhoto);
   const clampPct = (v) => Math.max(0, Math.min(100, v));
   const setAdjMsg = (t, err) => { const m = $('adjust-msg'); m.textContent = t; m.classList.toggle('err', !!err); };
   function serialize(d) { return '<!doctype html>\n' + d.documentElement.outerHTML; }
-  function taggedHtml(src) {
-    const d = new DOMParser().parseFromString(src, 'text/html');
-    photoImgs(d).forEach((im, i) => im.setAttribute('data-sxi', String(i)));
-    return serialize(d);
+  const handOn = () => adj.on || words.on;
+  function handStart(mode) {
+    const f = $('frame');
+    f.setAttribute('sandbox', 'allow-same-origin');
+    ['download', 'copy', 'newtab', 'adjust', 'words', 'edit-go'].forEach((id) => { if ($(id)) $(id).disabled = true; });
+    $(mode + '-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return f;
+  }
+  function handStop(mode) {
+    const f = $('frame'); f.onload = null; f.setAttribute('sandbox', '');
+    $(mode + '-bar').hidden = true;
+    if ($('edit-go')) $('edit-go').disabled = false;
+    paint(true); setDone(builtOk);
+  }
+  async function saveManual(out, note, okText, onErr) {
+    try {
+      const { data, error } = await db.rpc('save_manual_version', { p_parent: lastBuildId, p_html: out, p_note: note }).abortSignal(AbortSignal.timeout(15000));
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      onErr((e && e.message && !/fetch|network|timeout|abort/i.test(e.message)) ? e.message : "Couldn't save. Check your connection and try again.");
+      return null;
+    }
+  }
+  async function afterManualSave(id, text) {
+    await loadBuilds(false);
+    await openBuild(id, true);
+    const st = $('build-status'); st.className = 'status ok'; st.textContent = text;
+  }
+  // Animations, hover zooms and transitions are switched off while editing, so what you drag is what stays.
+  const CALM = '*{animation:none!important;transition:none!important}';
+
+  // ----- Adjust photos -----
+  // Click a photo, choose its frame shape (the site's design often puts every photo in the same wide frame, which cuts
+  // off portraits), and drag to choose what part shows. Three kinds of photo:
+  //   flow: its own size sets its frame (most gallery photos): the shape goes on the photo, capped at 80% of the screen
+  //         height and centred, so a tall photo never becomes a tower;
+  //   box:  it fills a box the design sized (e.g. an about photo): the shape goes on that box;
+  //   fill: it's a background behind a section (position: absolute): only dragging and "whole photo" make sense.
+  const SHAPES = { wide: 16 / 9, land: 3 / 2, square: 1, portrait: 4 / 5, tall: 2 / 3 };
+  // Which kind is it? Try a test shape on the photo, then on its box, and measure which one actually takes effect.
+  function photoKind(im, win) {
+    const cs = win.getComputedStyle(im);
+    if (cs.position === 'absolute' || cs.position === 'fixed') return 'fill';
+    const par = im.parentElement;
+    const T = 0.77; // a test shape no design is likely to use already
+    const ratio = () => { const r = im.getBoundingClientRect(); return r.height ? r.width / r.height : 0; };
+    const clipped = () => { if (!par) return false; const pr = par.getBoundingClientRect(); const r = im.getBoundingClientRect(); return win.getComputedStyle(par).overflow !== 'visible' && r.bottom > pr.bottom + 2; };
+    const imStyle = im.getAttribute('style'); const parStyle = par ? par.getAttribute('style') : null;
+    const undo = () => {
+      if (imStyle == null) im.removeAttribute('style'); else im.setAttribute('style', imStyle);
+      if (par) { if (parStyle == null) par.removeAttribute('style'); else par.setAttribute('style', parStyle); }
+    };
+    try {
+      applyPhoto(im, { shape: 'x', kind: 'flow', ratio: T }, T);
+      if (Math.abs(ratio() - T) < 0.03 && !clipped()) return 'flow';
+      undo();
+      if (par) { applyPhoto(im, { shape: 'x', kind: 'box', ratio: T }, T); if (Math.abs(ratio() - T) < 0.03) return 'box'; }
+      return 'fill';
+    } finally { undo(); }
+  }
+  function shapeRatio(c, im) {
+    if (c.shape === 'own') return c.ratio || (im && im.naturalWidth ? +(im.naturalWidth / im.naturalHeight).toFixed(4) : null);
+    return SHAPES[c.shape] || null;
+  }
+  // Apply one photo's change to an <img> (in the preview or in the saved copy).
+  function applyPhoto(im, c, force) {
+    if (!c) return;
+    const r = force || shapeRatio(c, im);
+    if (c.shape === 'contain') { im.style.objectFit = 'contain'; im.style.removeProperty('object-position'); return; }
+    if (r && c.kind === 'flow') {
+      Object.assign(im.style, { aspectRatio: String(r), width: `min(100%, calc(80vh * ${r}))`, height: 'auto', maxWidth: '100%', marginLeft: 'auto', marginRight: 'auto', objectFit: 'cover' });
+    } else if (r && c.kind === 'box' && im.parentElement) {
+      Object.assign(im.parentElement.style, { aspectRatio: String(r), height: 'auto' });
+      im.style.objectFit = 'cover';
+    }
+    if (c.pos) im.style.objectPosition = c.pos;
   }
   function applyChanges(src, changes) {
     const d = new DOMParser().parseFromString(src, 'text/html');
-    photoImgs(d).forEach((im, i) => {
-      const c = changes[i]; if (!c) return;
-      if (c.fit) im.style.objectFit = c.fit;
-      if (c.fit === 'contain') im.style.removeProperty('object-position');
-      else if (c.pos) im.style.objectPosition = c.pos;
-    });
+    photoImgs(d).forEach((im, i) => applyPhoto(im, changes[i]));
+    return serialize(d);
+  }
+  function taggedHtml(src) {
+    const d = new DOMParser().parseFromString(src, 'text/html');
+    photoImgs(d).forEach((im, i) => im.setAttribute('data-sxi', String(i)));
     return serialize(d);
   }
   // The photo's current position as percentages (the browser may report pixels or keywords).
@@ -742,23 +817,38 @@
     const x = im.naturalWidth * sc - bw; const y = im.naturalHeight * sc - bh;
     return { x, y, movable: x > 1 || y > 1 };
   }
+  const idx = (im) => Number(im.getAttribute('data-sxi'));
+  function restorePhoto(im) {
+    im.setAttribute('style', im.dataset.sxStyle || ''); if (!im.dataset.sxStyle) im.removeAttribute('style');
+    const par = im.parentElement;
+    if (par && 'sxPstyle' in par.dataset) { par.setAttribute('style', par.dataset.sxPstyle); if (!par.dataset.sxPstyle) par.removeAttribute('style'); }
+  }
+  function photoMsg(im) {
+    const win = $('frame').contentDocument.defaultView;
+    const c = adj.changes[idx(im)] || {};
+    const kind = adj.kinds[idx(im)];
+    const ov = overflow(im, win);
+    if (c.shape === 'contain') { setAdjMsg(kind === 'fill' ? 'Showing the whole photo, with space around it.' : 'Showing the whole photo inside its frame, with space around it. "Photo\'s own shape" usually looks better.'); return; }
+    if (kind === 'fill') { setAdjMsg('This photo is the background of a section, so the section is its frame. Drag it to choose what shows (or use the arrow keys), then save.'); return; }
+    setAdjMsg(ov.movable ? 'Drag the photo to choose what shows (or use the arrow keys). If too much is cut off, change the frame shape. Then save.'
+      : 'The whole photo shows in this frame. Pick another frame shape if you like, then save.');
+  }
   function selectPhoto(im) {
     const doc = $('frame').contentDocument;
     doc.querySelectorAll('img.sx-sel').forEach((x) => x.classList.remove('sx-sel'));
     adj.sel = im; im.classList.add('sx-sel');
-    const win = doc.defaultView;
-    $('adjust-whole').disabled = false; $('adjust-reset').disabled = false;
-    $('adjust-whole').checked = win.getComputedStyle(im).objectFit === 'contain';
-    const ov = overflow(im, win);
-    setAdjMsg($('adjust-whole').checked ? 'Showing the whole photo. Untick it to fill the frame again.'
-      : ov.movable ? 'Drag the photo to choose what shows, or use the arrow keys. Then save.'
-        : 'This photo already fits its frame, so there is nothing to move. You can still show the whole photo.');
+    const kind = adj.kinds[idx(im)];
+    const sel = $('adjust-shape');
+    sel.disabled = false; $('adjust-reset').disabled = false;
+    [...sel.options].forEach((o) => { o.disabled = kind === 'fill' && !['design', 'contain'].includes(o.value); });
+    sel.value = (adj.changes[idx(im)] || {}).shape || 'design';
+    photoMsg(im);
   }
-  function record(im) {
-    const i = Number(im.getAttribute('data-sxi'));
-    const win = $('frame').contentDocument.defaultView;
-    const fit = win.getComputedStyle(im).objectFit;
-    adj.changes[i] = { fit: fit === 'contain' ? 'contain' : 'cover', pos: im.style.objectPosition || null };
+  function setChange(im, patch) {
+    const i = idx(im);
+    const c = { kind: adj.kinds[i], ...(adj.changes[i] || {}), ...patch };
+    if (c.shape === 'own' && !c.ratio && im.naturalWidth) c.ratio = +(im.naturalWidth / im.naturalHeight).toFixed(4);
+    adj.changes[i] = c;
     $('adjust-save').disabled = false;
   }
   function moveBy(im, dx, dy) {
@@ -766,13 +856,14 @@
     const ov = overflow(im, win); if (!ov.movable) return;
     const [x, y] = currentPos(im, win);
     im.style.objectPosition = `${clampPct(x + dx).toFixed(1)}% ${clampPct(y + dy).toFixed(1)}%`;
-    record(im);
+    setChange(im, { pos: im.style.objectPosition });
   }
   function wireFrame() {
     const doc = $('frame').contentDocument; if (!doc) return;
     const win = doc.defaultView;
     const st = doc.createElement('style');
-    st.textContent = 'img[data-sxi]{cursor:grab;outline:2px dashed rgba(255,154,77,.95);outline-offset:-2px;touch-action:none;user-select:none}'
+    st.textContent = CALM + 'img[data-sxi]{cursor:grab;touch-action:none;user-select:none}'
+      + 'img[data-sxi]:hover{outline:2px dashed rgba(255,154,77,.95);outline-offset:-2px}'
       + 'img[data-sxi].sx-sel{outline:3px solid #F2496B;outline-offset:-3px}img[data-sxi].sx-drag{cursor:grabbing}';
     doc.head.append(st);
     // Links and forms don't work while adjusting (clicks choose photos).
@@ -782,78 +873,70 @@
     if (!imgs.length) { setAdjMsg('There are no photos of yours on this version.', true); return; }
     imgs.forEach((im) => {
       im.draggable = false;
-      im.dataset.sxStartPos = im.style.objectPosition || '';
-      im.dataset.sxStartFit = im.style.objectFit || '';
+      im.dataset.sxStyle = im.getAttribute('style') || '';
+      if (im.parentElement && !('sxPstyle' in im.parentElement.dataset)) im.parentElement.dataset.sxPstyle = im.parentElement.getAttribute('style') || '';
+      const setKind = () => { adj.kinds[idx(im)] = photoKind(im, win); };
+      if (im.complete) setKind(); else im.addEventListener('load', setKind, { once: true });
       im.addEventListener('dragstart', (e) => e.preventDefault());
       im.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        if (!(idx(im) in adj.kinds)) setKind();
         selectPhoto(im);
         const ov = overflow(im, win); if (!ov.movable) return;
         const [sx, sy] = currentPos(im, win);
         const x0 = e.clientX; const y0 = e.clientY;
         im.setPointerCapture(e.pointerId); im.classList.add('sx-drag');
+        let moved = false;
         const move = (ev) => {
           // Dragging moves the photo with the pointer, so the hidden part slides into view.
           const nx = ov.x > 1 ? clampPct(sx - ((ev.clientX - x0) / ov.x) * 100) : sx;
           const ny = ov.y > 1 ? clampPct(sy - ((ev.clientY - y0) / ov.y) * 100) : sy;
-          im.style.objectPosition = `${nx.toFixed(1)}% ${ny.toFixed(1)}%`;
+          im.style.objectPosition = `${nx.toFixed(1)}% ${ny.toFixed(1)}%`; moved = true;
         };
-        const up = () => { im.removeEventListener('pointermove', move); im.removeEventListener('pointerup', up); im.removeEventListener('pointercancel', up); im.classList.remove('sx-drag'); record(im); };
+        const up = () => { im.removeEventListener('pointermove', move); im.removeEventListener('pointerup', up); im.removeEventListener('pointercancel', up); im.classList.remove('sx-drag'); if (moved) setChange(im, { pos: im.style.objectPosition }); };
         im.addEventListener('pointermove', move); im.addEventListener('pointerup', up); im.addEventListener('pointercancel', up);
       });
     });
-    setAdjMsg(`Click a photo (${imgs.length} on this page), then drag it to choose what shows.`);
+    setAdjMsg(`Click a photo (${imgs.length} on this page). Then choose its frame shape, or drag it to choose what shows.`);
   }
   function startAdjust() {
-    if (!html || building || editing || !lastBuildId) return;
-    adj.on = true; adj.changes = {}; adj.sel = null; adj.base = html;
-    const f = $('frame');
-    f.setAttribute('sandbox', 'allow-same-origin');
+    if (!html || building || editing || !lastBuildId || handOn()) return;
+    adj.on = true; adj.changes = {}; adj.kinds = {}; adj.sel = null; adj.base = html;
+    $('adjust-bar').hidden = false; $('adjust-save').disabled = true; $('adjust-shape').disabled = true; $('adjust-reset').disabled = true;
+    const f = handStart('adjust');
     f.onload = wireFrame;
     f.srcdoc = withLogo(taggedHtml(html));
-    $('adjust-bar').hidden = false; $('adjust-save').disabled = true; $('adjust-whole').disabled = true; $('adjust-reset').disabled = true;
-    ['download', 'copy', 'newtab', 'adjust', 'edit-go'].forEach((id) => { if ($(id)) $(id).disabled = true; });
     setAdjMsg('Loading your photos…');
-    $('adjust-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
-  function stopAdjust() {
-    adj.on = false; adj.sel = null;
-    const f = $('frame'); f.onload = null; f.setAttribute('sandbox', '');
-    $('adjust-bar').hidden = true;
-    if ($('edit-go')) $('edit-go').disabled = false;
-    paint(true); setDone(builtOk);
-  }
+  function stopAdjust() { adj.on = false; adj.sel = null; handStop('adjust'); }
   async function saveAdjust() {
     const n = Object.keys(adj.changes).length;
     if (!n) { stopAdjust(); return; }
     const out = applyChanges(adj.base, adj.changes);
     $('adjust-save').disabled = true; setAdjMsg('Saving…');
-    try {
-      const { data, error } = await db.rpc('save_manual_version', { p_parent: lastBuildId, p_html: out, p_note: n === 1 ? 'Adjusted a photo' : `Adjusted ${n} photos` }).abortSignal(AbortSignal.timeout(15000));
-      if (error) throw error;
-      stopAdjust();
-      await loadBuilds(false);
-      await openBuild(data, true);
-      const st = $('build-status'); st.className = 'status ok';
-      st.textContent = 'Photo changes saved as a new version. Undo goes back. This didn\'t use any of your changes.';
-    } catch (e) {
-      $('adjust-save').disabled = false;
-      setAdjMsg((e && e.message && !/fetch|network|timeout|abort/i.test(e.message)) ? e.message : "Couldn't save. Check your connection and try again.", true);
-    }
+    const id = await saveManual(out, n === 1 ? 'Adjusted a photo' : `Adjusted ${n} photos`, null, (m) => { $('adjust-save').disabled = false; setAdjMsg(m, true); });
+    if (!id) return;
+    stopAdjust();
+    await afterManualSave(id, 'Photo changes saved as a new version. Undo goes back. This didn\'t use any of your changes.');
   }
   $('adjust').addEventListener('click', startAdjust);
   $('adjust-cancel').addEventListener('click', stopAdjust);
   $('adjust-save').addEventListener('click', saveAdjust);
-  $('adjust-whole').addEventListener('change', (e) => {
+  $('adjust-shape').addEventListener('change', (e) => {
     const im = adj.sel; if (!im) return;
-    im.style.objectFit = e.target.checked ? 'contain' : 'cover';
-    if (e.target.checked) im.style.removeProperty('object-position');
-    record(im); selectPhoto(im);
+    restorePhoto(im);
+    const keepPos = e.target.value === 'contain' ? null : (adj.changes[idx(im)] || {}).pos || null;
+    setChange(im, { shape: e.target.value, pos: keepPos, ratio: null });
+    if (e.target.value === 'design' && !keepPos) delete adj.changes[idx(im)];
+    applyPhoto(im, adj.changes[idx(im)]);
+    $('adjust-save').disabled = !Object.keys(adj.changes).length;
+    photoMsg(im);
+    im.scrollIntoView({ block: 'nearest' });
   });
   $('adjust-reset').addEventListener('click', () => {
     const im = adj.sel; if (!im) return;
-    im.style.objectPosition = im.dataset.sxStartPos || ''; im.style.objectFit = im.dataset.sxStartFit || '';
-    delete adj.changes[Number(im.getAttribute('data-sxi'))];
+    restorePhoto(im);
+    delete adj.changes[idx(im)];
     $('adjust-save').disabled = !Object.keys(adj.changes).length;
     selectPhoto(im);
   });
@@ -862,6 +945,230 @@
     e.preventDefault();
     const step = e.shiftKey ? 10 : 2;
     moveBy(adj.sel, e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0);
+  });
+
+  // ----- Edit words -----
+  // Click any words on the page and type. Every piece of text on the page becomes editable (headings, paragraphs,
+  // buttons, links, labels, captions, footer). Enter is blocked (one paragraph stays one paragraph). Phone and email
+  // links follow their new text. "Next [placeholder]" jumps to the next [PHONE NUMBER]-style blank Build left, and a
+  // placeholder filled in once can be filled in everywhere else it appears.
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'TEXTAREA', 'SELECT', 'OPTION', 'INPUT', 'IFRAME', 'OBJECT', 'CANVAS', 'VIDEO', 'AUDIO', 'MATH']);
+  const PH = /\[[^\]\n]{2,48}\]/g;
+  // The text pieces of a page, in order. An element whose content is only text and inline formatting (b, em, a, br…)
+  // is edited as a whole. Loose text next to anything else (a form box, an image, a block, or inside a button or label,
+  // which browsers won't place a cursor in) is wrapped in a temporary <span data-sxw> while editing, and unwrapped
+  // when saving. Running this on the same page always gives the same pieces in the same order.
+  const INLINE = new Set(['A', 'ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE', 'DATA', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR']);
+  const WRAP_ALWAYS = new Set(['BUTTON', 'LABEL', 'SUMMARY', 'LEGEND', 'OPTION']);
+  const hasText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.nodeValue.trim());
+  const pureInline = (el) => [...el.querySelectorAll('*')].every((c) => INLINE.has(c.tagName.toUpperCase()));
+  function textEls(d) {
+    const out = [];
+    const walk = (el) => {
+      for (const c of [...el.children]) {
+        const tag = c.tagName.toUpperCase();
+        if (SKIP.has(tag)) continue;
+        if (hasText(c) && !WRAP_ALWAYS.has(tag) && pureInline(c)) { out.push(c); continue; }
+        if (hasText(c)) {
+          // Wrap each run of loose text (with the inline formatting around it) in its own editable span.
+          let run = [];
+          const flush = () => {
+            if (run.some((n) => (n.nodeType === 3 ? n.nodeValue.trim() : n.textContent.trim()))) {
+              const sp = d.createElement('span'); sp.setAttribute('data-sxw', '');
+              run[0].before(sp); run.forEach((n) => sp.append(n)); out.push(sp);
+            }
+            run = [];
+          };
+          for (const n of [...c.childNodes]) {
+            const inline = n.nodeType === 3 || (n.nodeType === 1 && INLINE.has(n.tagName.toUpperCase()) && pureInline(n) && n.tagName.toUpperCase() !== 'BR');
+            if (inline) run.push(n); else { flush(); if (n.nodeType === 1 && !SKIP.has(n.tagName.toUpperCase())) walk({ children: [n] }); }
+          }
+          flush();
+          continue;
+        }
+        walk(c);
+      }
+    };
+    if (d.body) walk(d.body);
+    return out;
+  }
+  const unwrap = (root) => root.querySelectorAll('span[data-sxw]').forEach((sp) => sp.replaceWith(...sp.childNodes));
+  const words = { on: false, base: '', dirty: new Set(), start: [], pending: null, phAt: 0 };
+  const setWordsMsg = (t, err) => { const m = $('words-msg'); m.textContent = t; m.classList.toggle('err', !!err); };
+  // Swap the preview's private photo links and logo back to Build's own tags.
+  function unfill(s) {
+    const map = photoLinks();
+    for (const [k, url] of Object.entries(map)) {
+      if (k.includes(':') || !url) continue;
+      s = s.split(url).join('sogilex:photo:' + k).split(url.replace(/&/g, '&amp;')).join('sogilex:photo:' + k);
+    }
+    if (kit.logo) s = s.split(kit.logo).join('sogilex:logo');
+    return s.split(BLANK_PNG).join('sogilex:logo');
+  }
+  const looksPhone = (t) => /^\+?[\d\s().-]{7,20}$/.test(t) && (t.match(/\d/g) || []).length >= 7;
+  const looksEmail = (t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t);
+  // A phone or email link whose words changed: point the link at the new number or address.
+  function syncLinks(el) {
+    const links = el.matches('a[href]') ? [el] : [...el.querySelectorAll('a[href]')];
+    for (const a of links) {
+      const href = a.getAttribute('href') || ''; const t = a.textContent.trim();
+      if (/^tel:/i.test(href) && looksPhone(t)) a.setAttribute('href', 'tel:' + t.replace(/[^\d+]/g, ''));
+      else if (/^mailto:/i.test(href) && looksEmail(t)) a.setAttribute('href', 'mailto:' + t);
+    }
+  }
+  function phList(doc) {
+    const hits = [];
+    for (const el of doc.querySelectorAll('[data-sxt]')) {
+      const tw = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+        PH.lastIndex = 0; let m;
+        while ((m = PH.exec(n.nodeValue))) hits.push({ el, node: n, at: m.index, text: m[0] });
+      }
+    }
+    return hits;
+  }
+  function wordsCount() {
+    const doc = $('frame').contentDocument; if (!doc) return;
+    const n = words.dirty.size; const ph = phList(doc);
+    $('words-save').disabled = !n;
+    $('words-next').hidden = !ph.length || !$('ph-row').hidden;
+    $('words-next').textContent = ph.length ? `Fill in placeholders (${new Set(ph.map((h) => h.text)).size})` : '';
+    if (!ph.length) $('ph-row').hidden = true;
+    if (!words.pending) setWordsMsg(n ? `${n} ${n === 1 ? 'place' : 'places'} changed. Keep going, or save.` : 'Click any words on the page and type. Press Save when you\'re done.');
+  }
+  // After a placeholder is filled in: offer the same words in every other place it appears.
+  function offerAll(el) {
+    const i = Number(el.getAttribute('data-sxt'));
+    const before = words.start[i] || ''; const after = el.textContent;
+    words.pending = null; $('words-all').hidden = true;
+    const ph = (before.match(PH) || []).find((p) => !after.includes(p));
+    if (!ph) return;
+    const k = before.indexOf(ph); const head = before.slice(0, k); const tail = before.slice(k + ph.length);
+    if (!after.startsWith(head) || !after.endsWith(tail)) return;
+    const fill = after.slice(head.length, after.length - tail.length).trim();
+    if (!fill || fill.length > 120) return;
+    const doc = $('frame').contentDocument;
+    const others = phList(doc).filter((h) => h.text === ph && h.el !== el);
+    const hrefs = [...doc.querySelectorAll('a[href]')].filter((a) => (a.getAttribute('href') || '').includes(ph));
+    if (!others.length && !hrefs.length) return;
+    words.pending = { ph, fill };
+    const places = new Set(others.map((h) => h.el)).size;
+    $('words-all').textContent = places ? `Use "${fill.length > 28 ? fill.slice(0, 27) + '…' : fill}" in the other ${places} ${places === 1 ? 'place' : 'places'}` : 'Update the link too';
+    $('words-all').hidden = false;
+    setWordsMsg(places ? `${ph} also appears in ${places} other ${places === 1 ? 'place' : 'places'} on this page.` : `A link on this page still points to ${ph}.`);
+  }
+  function fillAll(given) {
+    const p = given || words.pending; if (!p) return;
+    const doc = $('frame').contentDocument;
+    for (const h of phList(doc).filter((x) => x.text === p.ph)) {
+      h.node.nodeValue = h.node.nodeValue.split(p.ph).join(p.fill);
+      words.dirty.add(Number(h.el.getAttribute('data-sxt'))); syncLinks(h.el);
+    }
+    for (const a of doc.querySelectorAll('a[href]')) {
+      const href = a.getAttribute('href') || ''; if (!href.includes(p.ph)) continue;
+      const v = /^tel:/i.test(href) ? p.fill.replace(/[^\d+]/g, '') : /^mailto:/i.test(href) ? p.fill.trim() : encodeURI(p.fill.trim());
+      a.setAttribute('href', href.split(p.ph).join(v));
+      const host = a.closest('[data-sxt]') || a; if (host.hasAttribute('data-sxt')) words.dirty.add(Number(host.getAttribute('data-sxt')));
+      else { words.hrefOnly = words.hrefOnly || new Set(); words.hrefOnly.add(a); }
+    }
+    words.pending = null; $('words-all').hidden = true;
+    wordsCount();
+  }
+  function wireWords() {
+    const doc = $('frame').contentDocument; if (!doc) return;
+    const st = doc.createElement('style');
+    st.textContent = CALM + '[data-sxt]{cursor:text;border-radius:3px}[data-sxt]:hover{outline:2px dashed rgba(255,154,77,.9);outline-offset:3px}'
+      + '[data-sxt]:focus{outline:3px solid #F2496B;outline-offset:3px;background-color:rgba(242,73,107,.08)}'
+      + '.sx-ph{outline:3px solid #FF9A4D!important;outline-offset:3px;background-color:rgba(255,154,77,.15)!important}';
+    doc.head.append(st);
+    doc.addEventListener('click', (e) => { if (e.target.closest('a, button, label, summary')) e.preventDefault(); }, true);
+    doc.addEventListener('submit', (e) => e.preventDefault(), true);
+    let pt = true;
+    const els = [...doc.querySelectorAll('[data-sxt]')];
+    words.start = [];
+    els.forEach((el) => {
+      const i = Number(el.getAttribute('data-sxt'));
+      words.start[i] = el.textContent;
+      try { el.contentEditable = 'plaintext-only'; if (el.contentEditable !== 'plaintext-only') throw 0; } catch { pt = false; el.contentEditable = 'true'; }
+      el.spellcheck = true;
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+      el.addEventListener('input', () => { words.dirty.add(i); wordsCount(); });
+      el.addEventListener('focusout', () => { if (el.textContent !== words.start[i]) { syncLinks(el); offerAll(el); } wordsCount(); });
+      if (!pt) el.addEventListener('paste', (e) => { e.preventDefault(); doc.execCommand('insertText', false, (e.clipboardData.getData('text/plain') || '').replace(/\s*\n\s*/g, ' ')); });
+    });
+    wordsCount();
+  }
+  function startWords() {
+    if (!html || building || editing || !lastBuildId || handOn()) return;
+    words.on = true; words.base = html; words.dirty = new Set(); words.pending = null; words.phAt = 0; words.hrefOnly = null;
+    $('words-bar').hidden = false; $('words-save').disabled = true; $('words-all').hidden = true; $('words-next').hidden = true; $('ph-row').hidden = true;
+    const d = new DOMParser().parseFromString(html, 'text/html');
+    textEls(d).forEach((el, i) => el.setAttribute('data-sxt', String(i)));
+    const f = handStart('words');
+    f.onload = wireWords;
+    f.srcdoc = withLogo(serialize(d));
+    setWordsMsg('Loading your page…');
+  }
+  function stopWords() { words.on = false; handStop('words'); }
+  async function saveWords() {
+    const doc = $('frame').contentDocument;
+    if (!doc || (!words.dirty.size && !words.hrefOnly)) { stopWords(); return; }
+    const d = new DOMParser().parseFromString(words.base, 'text/html');
+    const targets = textEls(d);
+    const live = new Map([...doc.querySelectorAll('[data-sxt]')].map((el) => [Number(el.getAttribute('data-sxt')), el]));
+    let first = '';
+    for (const i of words.dirty) {
+      const src = live.get(i); const dst = targets[i]; if (!src || !dst) continue;
+      syncLinks(src);
+      src.classList.remove('sx-ph');
+      dst.innerHTML = unfill(src.innerHTML);
+      if (src.matches('a[href]')) dst.setAttribute('href', unfill(src.getAttribute('href')));
+      if (!first) first = src.textContent.trim();
+    }
+    if (words.hrefOnly) {
+      // Links outside any text (e.g. an icon link) that pointed at a filled-in placeholder: match them by position.
+      const liveA = [...doc.querySelectorAll('a[href]')]; const outA = [...d.querySelectorAll('a[href]')];
+      for (const a of words.hrefOnly) { const k = liveA.indexOf(a); if (k >= 0 && outA[k]) outA[k].setAttribute('href', unfill(a.getAttribute('href'))); }
+    }
+    unwrap(d);
+    const n = words.dirty.size || 1;
+    const note = n === 1 && first ? `Edited words: "${first.length > 40 ? first.slice(0, 39) + '…' : first}"` : `Edited words in ${n} places`;
+    $('words-save').disabled = true; setWordsMsg('Saving…');
+    const id = await saveManual(serialize(d), note, null, (m) => { $('words-save').disabled = false; setWordsMsg(m, true); });
+    if (!id) return;
+    stopWords();
+    await afterManualSave(id, 'Word changes saved as a new version. Undo goes back. This didn\'t use any of your changes.');
+  }
+  $('words').addEventListener('click', startWords);
+  $('words-cancel').addEventListener('click', () => { if (words.dirty.size && !confirm('Throw away your word changes?')) return; stopWords(); });
+  $('words-save').addEventListener('click', saveWords);
+  $('words-all').addEventListener('click', () => fillAll());
+  // Fill in placeholders: one box per [PLACEHOLDER]; what you type replaces it everywhere on the page, links included.
+  function phNext(skip) {
+    const doc = $('frame').contentDocument; const ph = phList(doc);
+    const kinds = [...new Set(ph.map((h) => h.text))];
+    if (!kinds.length) { $('ph-row').hidden = true; wordsCount(); setWordsMsg('All placeholders are filled in. Check the page, then save.'); return; }
+    words.phAt = skip ? (words.phAt + 1) % kinds.length : Math.min(words.phAt, kinds.length - 1);
+    const cur = kinds[words.phAt];
+    const where = ph.filter((h) => h.text === cur);
+    $('ph-label').textContent = cur;
+    $('ph-input').value = ''; $('ph-input').placeholder = /PHONE/i.test(cur) ? '(314) 555-0100' : /EMAIL/i.test(cur) ? 'you@yourbusiness.com' : 'Type the real words';
+    $('ph-row').hidden = false; $('words-next').hidden = true;
+    setWordsMsg(`${cur} appears in ${where.length} ${where.length === 1 ? 'place' : 'places'}${kinds.length > 1 ? ` (${words.phAt + 1} of ${kinds.length} placeholders)` : ''}. Type what goes there, or skip it.`);
+    doc.querySelectorAll('.sx-ph').forEach((x) => x.classList.remove('sx-ph'));
+    where.forEach((h) => h.el.classList.add('sx-ph'));
+    where[0].el.scrollIntoView({ block: 'center' });
+    $('ph-input').focus();
+  }
+  $('words-next').addEventListener('click', () => { words.phAt = 0; phNext(false); });
+  $('ph-skip').addEventListener('click', () => phNext(true));
+  $('ph-done').addEventListener('click', () => { $('ph-row').hidden = true; const d = $('frame').contentDocument; if (d) d.querySelectorAll('.sx-ph').forEach((x) => x.classList.remove('sx-ph')); wordsCount(); });
+  $('ph-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = $('ph-input').value.trim(); if (!v) { $('ph-input').focus(); return; }
+    fillAll({ ph: $('ph-label').textContent, fill: v.slice(0, 120) });
+    const d = $('frame').contentDocument; if (d) d.querySelectorAll('.sx-ph').forEach((x) => x.classList.remove('sx-ph'));
+    phNext(false);
   });
 
   // Strip anything before <!doctype / <html and after </html>, in case the model adds stray text.
