@@ -31,6 +31,13 @@ with Sogilex sign-in).
   their own `online_menus` row, copies up to 20 of their own photos to KV `mphoto:<name>:<id>` (list
   `mphotos:<name>`), deletes ones no longer used, and serves them at `/menu-photos/<id>.jpg`. The menu page only
   shows ids on that list. Not yet: copies are left behind if the menu is taken offline or renamed.
+- Link preview picture (2026-11-22, 025): `sites.preview` is 'auto' (first of the owner's photos on the page, else the
+  logo), 'logo', or one photo id, chosen in Build's Publish box and sent as `preview` to `/publish` (optional third
+  argument `p_preview` of `publish_site`; left out = keep the saved choice). A chosen photo is copied to KV even if the
+  page doesn't show it. The Worker removes any og:/twitter: tags the page wrote and adds og:type, og:url, og:title (the
+  page's <title>), og:description (its meta description), og:image (absolute https://name.sogilex.net/photos/<id>.jpg
+  or /logo.png), og:image:alt and twitter:card (summary_large_image for photos, summary otherwise). Only takes effect
+  when a site is published (or republished) after 2026-11-22.
 - Served with a Content-Security-Policy that blocks all scripts and outside loads (images only from the site itself
   or data: URLs), plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).

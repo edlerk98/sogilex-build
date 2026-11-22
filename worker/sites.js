@@ -101,10 +101,15 @@ async function api(req, env, url) {
     if (url.pathname === '/publish') {
       let body;
       try { body = await req.json(); } catch { return json({ error: 'Send JSON.' }, 400); }
-      const result = await rpc(env, 'publish_site', { p_build_id: String(body.build_id || ''), p_slug: String(body.slug || '') }, token);
-      const withPhotos = await copyPhotos(env, token, result.slug, result.html);
+      const args = { p_build_id: String(body.build_id || ''), p_slug: String(body.slug || '') };
+      if (typeof body.preview === 'string' && body.preview) args.p_preview = body.preview.slice(0, 40);
+      const result = await rpc(env, 'publish_site', args, token);
+      // The link preview photo (025): a chosen photo is copied too, even if the page itself doesn't show it.
+      const pick = typeof result.preview === 'string' && UUID.test(result.preview) ? result.preview : null;
+      const { html: withPhotos, kept, order } = await copyPhotos(env, token, result.slug, result.html, pick ? [pick] : []);
       const hasLogo = await copyLogo(env, result.slug, result.logo);
-      const html = await prepare(withPhotos, result.slug, hasLogo);
+      const og = linkPreview(result.slug, result.preview, kept, order, hasLogo);
+      const html = await prepare(withPhotos, result.slug, hasLogo, og);
       await env.SITES.put('site:' + result.slug, html);
       if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); await env.SITES.delete('logo:' + result.old_slug); }
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
@@ -131,8 +136,9 @@ const PHOTO_TAG = /sogilex:photo:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const MAX_SITE_PHOTOS = 40; // each copy is one fetch; Workers allow 50 per request
 
-async function copyPhotos(env, token, slug, html) {
-  const ids = [...new Set([...html.matchAll(PHOTO_TAG)].map((m) => m[1]))].slice(0, MAX_SITE_PHOTOS);
+async function copyPhotos(env, token, slug, html, extra) {
+  const order = [...new Set([...html.matchAll(PHOTO_TAG)].map((m) => m[1]))]; // the page's photos, first to last
+  const ids = [...new Set([...order.slice(0, MAX_SITE_PHOTOS - 1), ...(extra || []), ...order.slice(MAX_SITE_PHOTOS - 1)])].slice(0, MAX_SITE_PHOTOS);
   const kept = [];
   if (ids.length) {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${ids.join(',')})`, {
@@ -152,7 +158,20 @@ async function copyPhotos(env, token, slug, html) {
   }
   await dropPhotos(env, slug, kept);
   await env.SITES.put('photos:' + slug, JSON.stringify(kept));
-  return html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG));
+  return { html: html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG)), kept, order };
+}
+
+// The picture for shared links: the chosen photo, the logo, or (automatic) the first photo on the page, else the
+// logo. A chosen photo that couldn't be copied falls back to automatic. Absolute https addresses, as apps require.
+function linkPreview(slug, choice, kept, order, hasLogo) {
+  const base = `https://${slug}.${ROOT}`;
+  const photo = (id) => ({ image: `${base}/photos/${id}.jpg`, large: true });
+  const logo = hasLogo ? { image: `${base}/logo.png`, large: false } : null;
+  if (typeof choice === 'string' && UUID.test(choice) && kept.includes(choice)) return { url: base + '/', ...photo(choice) };
+  if (choice === 'logo' && logo) return { url: base + '/', ...logo };
+  const first = order.find((id) => kept.includes(id));
+  if (first) return { url: base + '/', ...photo(first) };
+  return { url: base + '/', ...(logo || { image: null, large: false }) };
 }
 
 // The online menu's photos (a big one at the top, one per section). The menu text is saved straight to the database
@@ -382,7 +401,27 @@ async function serveMenu(env, slug, method) {
 const ACTIVE = 'script, iframe, frame, frameset, object, embed, applet, base, portal, meta[http-equiv], link';
 const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'srcset', 'poster', 'data']);
 
-async function prepare(html, slug, hasLogo) {
+// Shared-link tags (Open Graph + Twitter/X card). Any the generated page wrote itself are replaced by these.
+function decodeEntities(s) {
+  return String(s).replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|#39|nbsp);/gi, (m, e) => {
+    const k = e.toLowerCase();
+    if (k[0] === '#') { const n = k[1] === 'x' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ''; }
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }[k] || m;
+  });
+}
+function ogTags(og, title, desc) {
+  const t = decodeEntities(title).replace(/\s+/g, ' ').trim().slice(0, 120);
+  const d = decodeEntities(desc).replace(/\s+/g, ' ').trim().slice(0, 300);
+  const m = (attr, key, val) => `<meta ${attr}="${key}" content="${esc(val)}">`;
+  return [
+    m('property', 'og:type', 'website'), m('property', 'og:url', og.url),
+    t ? m('property', 'og:title', t) : '', d ? m('property', 'og:description', d) : '',
+    og.image ? m('property', 'og:image', og.image) : '', og.image && t ? m('property', 'og:image:alt', t) : '',
+    m('name', 'twitter:card', og.image && og.large ? 'summary_large_image' : 'summary'),
+  ].filter(Boolean).join('');
+}
+
+async function prepare(html, slug, hasLogo, og) {
   const footer = `<div style="all:initial;display:block;padding:14px 16px;text-align:center;font:13px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;background:#120A18;color:#BBA9C2">Made with <a href="https://sogilex.com/" style="color:#FF9A4D">Sogilex</a> · <a href="mailto:hello@sogilex.com?subject=${encodeURIComponent('Report: ' + slug + '.' + ROOT)}" style="color:#BBA9C2">Report this site</a></div>`;
   const trap = '<div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>';
   const rewriter = new HTMLRewriter()
@@ -417,6 +456,19 @@ async function prepare(html, slug, hasLogo) {
       },
     })
     .on('body', { element(el) { el.append(footer, { html: true }); } });
+  if (og) {
+    let title = ''; let desc = ''; let added = false;
+    rewriter
+      .on('meta', { element(el) {
+        const key = (el.getAttribute('property') || el.getAttribute('name') || '').toLowerCase();
+        if (key.startsWith('og:') || key.startsWith('twitter:')) el.remove();
+        else if (key === 'description' && !desc) desc = el.getAttribute('content') || '';
+      } })
+      .on('title', { text(t) { if (title.length < 400) title += t.text; } })
+      .on('head', { element(el) { el.onEndTag((end) => { added = true; end.before(ogTags(og, title, desc), { html: true }); }); } })
+      // A page without a <head> (shouldn't happen): put the tags at the start of the body instead.
+      .on('body', { element(el) { if (!added) { added = true; el.prepend(ogTags(og, title, desc), { html: true }); } } });
+  }
   return rewriter.transform(new Response(html, { headers: { 'Content-Type': 'text/html' } })).text();
 }
 

@@ -62,7 +62,7 @@
 
   (async () => {
     const s = await session();
-    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadMail(); loadKit(s.user.id); loadBuilds(true); showEditQuota(); }
+    if (s) { $('brief').hidden = false; $('signout').hidden = false; $('pwbtn').hidden = false; showQuota(); loadSite(); loadMail(); loadHours(); loadKit(s.user.id); loadBuilds(true); showEditQuota(); }
     else {
       $('signin').hidden = false;
       SogilexAuth.mountSignIn($('signin-mount'), {
@@ -89,7 +89,7 @@
     if (!window.SogilexBrand) return;
     kit = await SogilexBrand.load(db, uid);
     $('logo-field').hidden = false;
-    SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); renderQuick(); if (html) paint(true); } });
+    SogilexBrand.mountLogo($('logo-mount'), { db, uid, kit, onChange: (k) => { kit = k; logoSwatches(); renderQuick(); if (html) paint(true); refreshPublish(); } });
     logoSwatches(); renderQuick();
     loadPhotos(uid);
   }
@@ -98,7 +98,7 @@
     $('photos-field').hidden = false;
     photoBox = SogilexPhotos.mount($('photos-mount'), {
       db, uid,
-      onChange: (photos) => { $('use-photos-row').hidden = !photos.length; if (html) paint(true); },
+      onChange: (photos) => { $('use-photos-row').hidden = !photos.length; if (html) paint(true); refreshPublish(); },
       onAdded: (added) => offerNewPhotos(added),
       isOnSite: (id) => (builtOk && lastBuildId && !building && !editing ? html.includes('sogilex:photo:' + id) : null),
       onAddToSite: (list) => addPhotosToSite(list),
@@ -132,6 +132,127 @@
     $('accent').value = b.dataset.c; $('accent-auto').checked = false;
   }));
   $('accent').addEventListener('input', () => { $('accent-auto').checked = false; });
+
+  // ---------- business hours (exact facts, sent to build-site apart from the description; 025_hours_and_link_preview.sql) ----------
+  // Each day: Not listed (left off the site), Open (one or two time ranges, e.g. lunch and dinner) or Closed.
+  // Saved to business_hours as { days: { mon: [["09:00","17:00"]] | "closed" }, note } so other tools can reuse them.
+  const DAYS = [['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'], ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
+  const hoursRows = {};
+  function el(tag, attrs, ...kids) {
+    const n = document.createElement(tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => { if (k === 'text') n.textContent = v; else if (k === 'class') n.className = v; else n.setAttribute(k, v); });
+    kids.forEach((k) => k && n.append(k));
+    return n;
+  }
+  function buildHoursRows() {
+    const box = $('hours-days');
+    DAYS.forEach(([key, label]) => {
+      const mode = el('select', { class: 'input hours-mode', id: `h-${key}`, 'aria-label': `${label}: open, closed or not listed` });
+      [['', 'Not listed'], ['open', 'Open'], ['closed', 'Closed']].forEach(([v, t]) => mode.append(el('option', { value: v, text: t })));
+      const range = (n) => {
+        const a = el('input', { class: 'input hours-time', type: 'time', 'aria-label': `${label} opens${n ? ' (second time)' : ''}` });
+        const b = el('input', { class: 'input hours-time', type: 'time', 'aria-label': `${label} closes${n ? ' (second time)' : ''}` });
+        return { wrap: el('span', { class: 'hours-range' }, a, el('span', { class: 'hours-to', text: 'to' }), b), a, b };
+      };
+      const r1 = range(0); const r2 = range(1);
+      const add = el('button', { class: 'linkish hours-add', type: 'button', text: '+ second time' });
+      const drop = el('button', { class: 'linkish hours-add', type: 'button', text: 'remove', 'aria-label': `Remove ${label}'s second time` });
+      r2.wrap.append(drop);
+      const times = el('div', { class: 'hours-times' }, r1.wrap, r2.wrap, add);
+      const row = el('div', { class: 'hours-row' }, el('label', { class: 'hours-day', for: `h-${key}`, text: label }), mode, times);
+      const r = { mode, r1, r2, add, times, two: false };
+      const sync = () => {
+        times.hidden = mode.value !== 'open';
+        r2.wrap.hidden = !r.two; add.hidden = r.two;
+      };
+      r.sync = sync;
+      mode.addEventListener('change', () => { if (mode.value === 'open' && !r1.a.value && !r1.b.value) { r1.a.value = '09:00'; r1.b.value = '17:00'; } sync(); hoursChanged(); });
+      add.addEventListener('click', () => { r.two = true; sync(); r2.a.focus(); hoursChanged(); });
+      drop.addEventListener('click', () => { r.two = false; r2.a.value = ''; r2.b.value = ''; sync(); add.focus(); hoursChanged(); });
+      [r1.a, r1.b, r2.a, r2.b].forEach((i) => i.addEventListener('change', hoursChanged));
+      hoursRows[key] = r; sync();
+      box.append(row);
+    });
+  }
+  // Read the form. Returns { hours, error }; hours is null when nothing was filled in.
+  function readHours() {
+    const days = {};
+    for (const [key, label] of DAYS) {
+      const r = hoursRows[key];
+      if (r.mode.value === 'closed') days[key] = 'closed';
+      else if (r.mode.value === 'open') {
+        const ranges = [[r.r1.a.value, r.r1.b.value]];
+        if (r.two && (r.r2.a.value || r.r2.b.value)) ranges.push([r.r2.a.value, r.r2.b.value]);
+        for (const [a, b] of ranges) {
+          if (!a || !b) return { error: `${label}: add both an opening and a closing time, or choose Closed.` };
+          if (a === b) return { error: `${label}: the opening and closing times are the same.` };
+        }
+        days[key] = ranges;
+      }
+    }
+    const note = $('hours-note').value.trim().slice(0, 200);
+    const hours = {};
+    if (Object.keys(days).length) hours.days = days;
+    if (note) hours.note = note;
+    return { hours: Object.keys(hours).length ? hours : null };
+  }
+  function fillHours(h) {
+    const days = (h && h.days) || {};
+    DAYS.forEach(([key]) => {
+      const r = hoursRows[key]; const d = days[key];
+      r.mode.value = d === 'closed' ? 'closed' : Array.isArray(d) ? 'open' : '';
+      const rs = Array.isArray(d) ? d : [];
+      r.r1.a.value = (rs[0] || [])[0] || ''; r.r1.b.value = (rs[0] || [])[1] || '';
+      r.r2.a.value = (rs[1] || [])[0] || ''; r.r2.b.value = (rs[1] || [])[1] || '';
+      r.two = rs.length > 1; r.sync();
+    });
+    $('hours-note').value = (h && h.note) || '';
+    hoursSummary();
+  }
+  function hoursSummary() {
+    const { hours } = readHours();
+    const n = hours && hours.days ? Object.keys(hours.days).length : 0;
+    $('hours-sum').textContent = !hours ? 'Not added' : n ? `${n} ${n === 1 ? 'day' : 'days'} set` : 'Note only';
+  }
+  let hoursTimer = null; let hoursLoaded = false;
+  function hoursChanged() {
+    hoursSummary();
+    const st = $('hours-status'); const { error } = readHours();
+    st.className = 'status' + (error ? ' err' : ''); st.textContent = error || '';
+    if (error || !hoursLoaded) return;
+    clearTimeout(hoursTimer); hoursTimer = setTimeout(saveHours, 900);
+  }
+  async function saveHours() {
+    clearTimeout(hoursTimer); hoursTimer = null;
+    const { hours, error } = readHours();
+    if (error) return false;
+    try {
+      const { error: e } = await db.from('business_hours').upsert({ hours: hours || {}, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).abortSignal(AbortSignal.timeout(8000));
+      if (e) throw e;
+      return true;
+    } catch { const st = $('hours-status'); st.className = 'status err'; st.textContent = "Couldn't save your hours to your account. They'll still be used for this build."; return false; }
+  }
+  async function loadHours() {
+    try {
+      const { data, error } = await db.from('business_hours').select('hours').maybeSingle().abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      if (data && data.hours) { fillHours(data.hours); if (readHours().hours) $('hours').open = true; }
+    } catch { /* starts empty */ }
+    hoursLoaded = true;
+  }
+  buildHoursRows();
+  $('hours-note').addEventListener('input', hoursChanged);
+  $('hours-copy').addEventListener('click', () => {
+    const m = hoursRows.mon;
+    if (!m.mode.value) { const st = $('hours-status'); st.className = 'status err'; st.textContent = 'Set Monday first, then copy it.'; m.mode.focus(); return; }
+    ['tue', 'wed', 'thu', 'fri'].forEach((k) => {
+      const r = hoursRows[k];
+      r.mode.value = m.mode.value; r.two = m.two;
+      r.r1.a.value = m.r1.a.value; r.r1.b.value = m.r1.b.value; r.r2.a.value = m.r2.a.value; r.r2.b.value = m.r2.b.value;
+      r.sync();
+    });
+    hoursChanged();
+  });
 
   // ---------- publishing (name.sogilex.net) ----------
   const PUBLISH_API = 'https://api.sogilex.net';
@@ -174,11 +295,66 @@
     if (!$('pub-slug').value) $('pub-slug').value = site.slug || slugify($('name').value);
     const cur = builds.find((b) => b.build_id === lastBuildId);
     const isLive = !!(cur && cur.live);
-    $('pub-go').disabled = !(builtOk && lastBuildId) || isLive;
-    $('pub-go').textContent = isLive ? 'This version is live' : live ? 'Publish this version' : 'Publish this site';
+    renderOg();
+    const ogChanged = isLive && ogEffective() !== (site.preview || 'auto');
+    $('pub-go').disabled = !(builtOk && lastBuildId) || (isLive && !ogChanged);
+    $('pub-go').textContent = ogChanged ? 'Update link preview' : isLive ? 'This version is live' : live ? 'Publish this version' : 'Publish this site';
     $('pub-hint').textContent = !(builtOk && lastBuildId) ? 'Build a site first, then publish it here.'
-      : isLive ? 'What you see here is what visitors see.'
-        : live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.';
+      : ogChanged ? 'Your site stays the same; only the link preview picture changes.'
+        : isLive ? 'What you see here is what visitors see.'
+          : live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.';
+  }
+
+  // ---------- link preview picture (Open Graph; the Worker adds the tags when publishing) ----------
+  // 'auto' = the first of your photos on the page, else your logo; 'logo'; or one photo's id.
+  let ogChoice = 'auto';
+  let ogLoaded = false;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  function ogResolve(choice) {
+    const photos = photoBox ? photoBox.photos : [];
+    if (UUID_RE.test(choice) && photos.some((p) => p.id === choice)) return { kind: 'photo', id: choice };
+    if (choice === 'logo') return kit.logo ? { kind: 'logo' } : { kind: 'none' };
+    const first = window.SogilexPhotos ? SogilexPhotos.idsIn(html).find((id) => photos.some((p) => p.id === id)) : null;
+    if (first) return { kind: 'photo', id: first };
+    return kit.logo ? { kind: 'logo' } : { kind: 'none' };
+  }
+  // A chosen photo that was removed, or a logo that's gone, counts as automatic. (The saved choice itself is kept:
+  // the photo list may simply not have loaded yet.)
+  function ogEffective() {
+    const photos = photoBox ? photoBox.photos : [];
+    if (UUID_RE.test(ogChoice) && !photos.some((p) => p.id === ogChoice)) return 'auto';
+    if (ogChoice === 'logo' && !kit.logo) return 'auto';
+    return ogChoice;
+  }
+  function renderOg() {
+    const box = $('og-choices'); if (!box) return;
+    const photos = photoBox ? photoBox.photos : [];
+    const links = photoLinks();
+    if (!ogLoaded && site.preview) { ogChoice = site.preview; ogLoaded = true; }
+    const choice = ogEffective();
+    const opts = [{ v: 'auto', label: 'Automatic', sub: 'First photo on your site' }];
+    if (kit.logo) opts.push({ v: 'logo', label: 'Your logo', img: kit.logo, logo: true });
+    photos.forEach((p, i) => opts.push({ v: p.id, label: (p.name || '').trim() || `Photo ${i + 1}`, img: links[p.id + ':t'] || links[p.id] }));
+    box.replaceChildren(...opts.map((o) => {
+      const input = el('input', { type: 'radio', name: 'og', value: o.v });
+      input.checked = o.v === choice;
+      input.addEventListener('change', () => { ogChoice = o.v; refreshPublish(); });
+      const pic = o.img ? el('img', { src: o.img, alt: '', class: o.logo ? 'og-logo' : '' }) : el('span', { class: 'og-auto', text: 'Auto' });
+      return el('label', { class: 'og-choice', title: o.label }, input, el('span', { class: 'og-tile' }, pic), el('span', { class: 'og-label', text: o.label }));
+    }));
+    // The card: roughly what a shared link looks like.
+    const r = ogResolve(choice);
+    const img = $('og-img'); img.replaceChildren(); img.className = 'og-img';
+    if (r.kind === 'photo' && (links[r.id] || links[r.id + ':t'])) img.append(el('img', { src: links[r.id] || links[r.id + ':t'], alt: '' }));
+    else if (r.kind === 'logo') { img.classList.add('is-logo'); img.append(el('img', { src: kit.logo, alt: '' })); }
+    else img.classList.add('is-none');
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1];
+    $('og-title').textContent = decode(title) || siteName || 'Your site';
+    $('og-host').textContent = `${slugify($('pub-slug').value) || site.slug || 'your-business'}.sogilex.net`;
+    $('og-note').textContent = r.kind === 'none'
+      ? 'No picture yet: add a photo to your site or a logo, or pick one of your photos above. Shared links will show just the name.'
+      : choice === 'auto' && r.kind === 'logo' ? 'This version has none of your photos, so your logo is used.'
+        : 'Apps can take a day or so to show a new picture for a link they have seen before.';
   }
   async function publishCall(path, body) {
     const s = await session();
@@ -194,7 +370,7 @@
     if (!res.ok) throw new Error(data.error || `Publishing failed (${res.status}).`);
     return data;
   }
-  $('pub-slug').addEventListener('input', () => { const v = slugify($('pub-slug').value); if (v !== $('pub-slug').value) $('pub-slug').value = v; });
+  $('pub-slug').addEventListener('input', () => { const v = slugify($('pub-slug').value); if (v !== $('pub-slug').value) $('pub-slug').value = v; $('og-host').textContent = `${v || 'your-business'}.sogilex.net`; });
   $('pub-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const st = $('pub-status'); st.className = 'status';
@@ -202,7 +378,7 @@
     if (slugValue.length < 3) { st.textContent = 'Choose an address of at least 3 letters or numbers.'; st.classList.add('err'); $('pub-slug').focus(); return; }
     $('pub-go').disabled = true; st.textContent = 'Publishing…';
     try {
-      const out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue });
+      const out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue, preview: ogEffective() });
       st.innerHTML = ''; st.append('Live at ', Object.assign(document.createElement('a'), { href: out.url, target: '_blank', rel: 'noopener', textContent: out.url }), '. It can take a minute to appear the very first time.');
       st.classList.add('ok');
       await loadSite(); loadBuilds(false);
@@ -702,8 +878,11 @@
     const st = $('build-status'); st.className = 'status';
     const description = $('desc').value.trim();
     if (description.length < 10) { st.textContent = 'Describe the site in a sentence or two.'; st.classList.add('err'); $('desc').focus(); return; }
+    const hr = readHours();
+    if (hr.error) { st.textContent = 'Business hours: ' + hr.error; st.classList.add('err'); $('hours').open = true; return; }
     const s = await session();
     if (!s) { st.textContent = 'Your sign-in expired. Reload the page and sign in again.'; st.classList.add('err'); return; }
+    if (hoursTimer || hr.hours) saveHours(); // keep them in the account for next time (doesn't hold up the build)
 
     siteName = $('name').value.trim();
     $('addr').textContent = `${slug(siteName)}.html`;
@@ -728,6 +907,7 @@
           logo: !!kit.logo,
           logo_colors: kit.logo ? (kit.colors || []) : [],
           use_photos: !!(photoBox && photoBox.photos.length && $('use-photos').checked),
+          hours: hr.hours,
         }),
       });
       if (!res.ok || !res.body) {

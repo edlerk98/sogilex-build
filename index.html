@@ -98,6 +98,15 @@
           <div id="photos-mount"></div>
           <label class="check-inline" id="use-photos-row" hidden><input type="checkbox" id="use-photos" checked> Use my photos in this site</label>
         </div>
+        <details class="field hours" id="hours">
+          <summary><span class="fake-label">Business hours <span class="opt">(optional)</span></span><span class="hours-sum" id="hours-sum">Not added</span></summary>
+          <p class="hint-line">Your exact hours go on the site as you set them here. They don't count toward the 1,500 characters. Leave a day as "Not listed" to keep it off the site. Saved to your account for next time.</p>
+          <div class="hours-days" id="hours-days"></div>
+          <button class="ghost hours-copy" type="button" id="hours-copy">Copy Monday to Tuesday–Friday</button>
+          <label class="hours-note-l" for="hours-note">Holidays or notes <span class="opt">(optional)</span></label>
+          <input class="input" id="hours-note" type="text" maxlength="200" placeholder="Closed Thanksgiving and Christmas Day">
+          <p class="status" id="hours-status" role="status" aria-live="polite"></p>
+        </details>
         <fieldset class="field">
           <legend>Style</legend>
           <div class="chips" id="styles">
@@ -197,6 +206,16 @@
             <button class="btn" type="submit" id="pub-go" disabled>Publish this site</button>
           </div>
           <p class="hint-line" id="pub-hint">Build a site first, then publish it here. Publishing again replaces your current site.</p>
+          <fieldset class="og" id="og">
+            <legend>Link preview picture</legend>
+            <p class="hint-line">The picture people see when you share your link in a text message, on Facebook or in an email.</p>
+            <div class="og-choices" id="og-choices"></div>
+            <div class="og-card" aria-hidden="true">
+              <div class="og-img" id="og-img"></div>
+              <div class="og-meta"><span class="og-host" id="og-host">your-business.sogilex.net</span><strong class="og-title" id="og-title">Your site</strong></div>
+            </div>
+            <p class="hint-line og-note" id="og-note"></p>
+          </fieldset>
         </form>
         <p class="status" id="pub-status" role="status" aria-live="polite"></p>
         <form id="mail-form" class="pub-form mail-form" novalidate>
