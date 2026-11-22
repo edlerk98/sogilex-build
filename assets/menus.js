@@ -220,7 +220,7 @@
   }
 
   // ---------- the online menu (https://<name>.sogilex.net/menu) ----------
-  // Closed beta like website publishing. Once it's online, every save updates it too, unless a price read from a
+  // Follows the plan, like website publishing. Once it's online, every save updates it too, unless a price read from a
   // photo is still unchecked (those never go online).
   let online = { can_publish: false, slug: null, site_slug: null };
   const menuUrl = (slug) => `https://${slug}.sogilex.net/menu`;
@@ -266,7 +266,7 @@
   }
   function onlineGroup() {
     if (!online.can_publish) {
-      // Plans without publishing (not Beta, which is invite-only as before): say how to get it.
+      // Plans without publishing (the free trial): say how to get it. Beta includes publishing (024).
       if (!online.plan || online.plan === 'beta') return null;
       return h('div', { class: 'mgroup' }, h('h3', { text: 'Online menu' }),
         h('p', { class: 'mhint' }, 'Putting your menu online behind a QR code comes with the Do it yourself plan. ', h('a', { href: '../account/#sec-plan', class: 'linkbtn', text: 'See plans' })));

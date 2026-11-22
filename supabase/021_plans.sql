@@ -29,7 +29,7 @@ revoke all on public.plans from anon, authenticated;
 grant select on public.plans to anon, authenticated;
 
 insert into public.plans (id, name, blurb, month_cents, year_cents, setup_cents, can_publish, limits, public, sort) values
-  ('beta', 'Beta', 'Everything free while Sogilex is in beta, with daily limits.', null, null, 0, false,
+  ('beta', 'Beta', 'Everything free while Sogilex is in beta, with daily limits.', null, null, 0, true,
    '{"window":"day","builds":3,"edits":30,"imports":10,"captions":40,"flyers":40,"posts":100,"docs":2000}', false, 0),
   ('trial', 'Free trial', 'Try each tool once: one website (with up to 5 changes), one menu, flyer, post and invoice.', 0, null, 0, false,
    '{"window":"ever","builds":1,"edits":5,"imports":1,"captions":3,"flyers":1,"posts":1,"docs":1}', true, 10),

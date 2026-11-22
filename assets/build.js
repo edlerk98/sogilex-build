@@ -146,7 +146,7 @@
     } catch { site = { can_publish: false, slug: null, messages: 0 }; }
     refreshPublish();
   }
-  // Plans without publishing (not Beta, which is invite-only as before): say how to get it.
+  // Plans without publishing (the free trial): say how to get it. Beta includes publishing (024).
   async function showPlanNote() {
     const p = await getPlan();
     let note = $('plan-note');
