@@ -51,6 +51,30 @@
 .inv-swatch { display: inline-flex; align-items: center; gap: 4px; }
 .inv-swatch i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255, 255, 255, .3); }
 
+/* new quote / new invoice: two equal, explained choices (people picked the wrong one when one button was louder) */
+.inv-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+@media (max-width: 480px) { .inv-pick { grid-template-columns: minmax(0, 1fr); } }
+.inv-pick-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--ctl);
+  background: rgba(255, 255, 255, .03); color: var(--text); font: 13px/1.4 var(--body); cursor: pointer; }
+.inv-pick-card strong { font: 600 16px var(--body); color: var(--lime); }
+.inv-pick-card span { color: var(--mute); }
+.inv-pick-card:hover { border-color: var(--lime); }
+.inv-pick-card:focus-visible { outline: 3px solid var(--lime); outline-offset: 2px; }
+/* what's open: a clear QUOTE / INVOICE badge */
+.inv-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 6px 0 -6px; }
+.inv-open .inv-open-h { margin: 0; }
+.inv-kind { font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+.inv-kind.kind-quote { background: #9EC5FF; color: #0E1A2E; }
+.inv-kind.kind-invoice { background: var(--sunset); color: var(--on-lime); }
+.inv-switch { margin-left: auto; font-size: 14px; }
+.inv-line.is-addon { border-left-color: #9EC5FF; border-left-style: dashed; }
+.inv-withadd { flex-basis: 100%; text-align: right; font-size: 14px; }
+.inv-dialog { max-width: min(460px, calc(100vw - 32px)); }
+.inv-addon-pick { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--ctl); border-radius: 10px; cursor: pointer; }
+.inv-addon-pick input { width: 18px; height: 18px; accent-color: var(--lime); }
+.inv-addon-pick span { flex: 1; }
+.inv-addon-pick strong { font-variant-numeric: tabular-nums; }
+
 /* ---------- preview ---------- */
 .sheets .inv-page { box-shadow: 0 20px 60px rgba(0, 0, 0, .45); flex: none; }
 
@@ -98,6 +122,19 @@
 .inv-sum .inv-total { padding-top: 8pt; margin-top: 4pt; border-top: 2pt solid var(--i-accent); font-size: 13pt; font-weight: 600; color: var(--i-ink); }
 .inv-notes { display: flex; flex-direction: column; break-inside: avoid; }
 .inv-notes p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+
+/* quote extras on the page */
+.inv-intro { margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-size: 11pt; }
+.inv-addons { display: flex; flex-direction: column; break-inside: avoid; }
+.inv-addons .inv-table td { padding: 6pt 0; color: var(--i-ink); }
+.inv-addons .inv-table tr:first-child td { border-top: 1pt dashed var(--i-rule); }
+.inv-addon-sum { margin: 6pt 0 0; text-align: right; color: var(--i-muted); font-variant-numeric: tabular-nums; }
+.inv-terms p { color: var(--i-muted); font-size: 9.5pt; }
+.inv-sign { display: flex; flex-direction: column; gap: 6pt; break-inside: avoid; margin-top: 6pt; }
+.inv-sign-row { display: grid; grid-template-columns: 1.2fr 1.6fr .8fr; gap: 18pt; }
+.inv-sign-row div { display: flex; flex-direction: column; gap: 3pt; }
+.inv-sign-row i { display: block; height: 26pt; border-bottom: 1pt solid var(--i-ink); }
+.inv-sign-row span { font-size: 8pt; color: var(--i-muted); letter-spacing: .08em; text-transform: uppercase; }
 
 @media print {
   @page { size: letter; margin: .5in; }

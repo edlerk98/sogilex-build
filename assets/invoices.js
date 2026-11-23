@@ -18,9 +18,10 @@
   // n / d rounded to the nearest whole number, halves away from zero.
   const roundDiv = (n, d) => (n < 0 ? -1 : 1) * Math.floor((Math.abs(n) + d / 2) / d);
   const lineAmount = (l) => roundDiv((l.q || 0) * (l.p || 0), 100);
-  function totals(d) {
+  // Optional add-ons (l.o, quotes only) are left out of the total, as the database does (026); withAddons counts them.
+  function totals(d, withAddons) {
     let sub = 0; let taxable = 0;
-    for (const l of d.lines || []) { const a = lineAmount(l); sub += a; if (l.t !== false) taxable += a; }
+    for (const l of d.lines || []) { if (l.o && !withAddons) continue; const a = lineAmount(l); sub += a; if (l.t !== false) taxable += a; }
     const tax = roundDiv(taxable * (d.tax || 0), 100000);
     return { sub, tax, total: sub + tax };
   }
@@ -101,6 +102,7 @@
   let filter = 'all';
   const ACCENTS = [['harbor', '#27467F'], ['rust', '#8E3B24'], ['sage', '#3D6B48'], ['berry', '#A8345A'], ['tavern', '#8A1F24'], ['ink', '#141414']];
   const TERMS = [[0, 'On receipt'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
+  const VALID = [[14, 'Valid 14 days'], [30, 'Valid 30 days'], [60, 'Valid 60 days']];
 
   const KIND = { invoice: { noun: 'invoice', Title: 'Invoice', prefix: 'INV-', due: 'Due' }, quote: { noun: 'quote', Title: 'Quote', prefix: 'Q-', due: 'Valid until' } };
   const numText = (r) => (r.number ? KIND[r.kind].prefix + String(r.number).padStart(4, '0') : 'Draft');
@@ -122,15 +124,17 @@
     const date = today();
     return { id: null, kind, status: 'draft', number: null, customer_id: null, source_id: null,
       data: { v: 1, date, due: kind === 'quote' ? addDays(date, 30) : addDays(date, termsDays()), to: { name: '', email: '', phone: '', address: '' },
-        lines: [{ d: '', q: 100, p: 0 }], tax: Number.isInteger(profile.taxDefault) ? profile.taxDefault : 0, notes: '' } };
+        lines: [{ d: '', q: 100, p: 0 }], tax: Number.isInteger(profile.taxDefault) ? profile.taxDefault : 0, notes: '',
+        ...(kind === 'quote' ? { intro: '', showTerms: true, sign: true } : {}) } };
   }
   function normalizeData(d) {
     d = d && typeof d === 'object' ? d : {};
     const to = d.to && typeof d.to === 'object' ? d.to : {};
     return { ...d, v: 1, date: d.date || today(), due: d.due || '',
       to: { name: String(to.name || ''), email: String(to.email || ''), phone: String(to.phone || ''), address: String(to.address || '') },
-      lines: Array.isArray(d.lines) ? d.lines.slice(0, 100).map((l) => ({ d: String(l.d || ''), q: Number.isInteger(l.q) ? l.q : 0, p: Number.isInteger(l.p) ? l.p : 0, ...(l.t === false ? { t: false } : {}) })) : [],
-      tax: Number.isInteger(d.tax) ? d.tax : 0, notes: String(d.notes || '') };
+      lines: Array.isArray(d.lines) ? d.lines.slice(0, 100).map((l) => ({ d: String(l.d || ''), q: Number.isInteger(l.q) ? l.q : 0, p: Number.isInteger(l.p) ? l.p : 0, ...(l.t === false ? { t: false } : {}), ...(l.o === true ? { o: true } : {}) })) : [],
+      tax: Number.isInteger(d.tax) ? d.tax : 0, notes: String(d.notes || ''),
+      intro: String(d.intro || ''), showTerms: d.showTerms !== false, sign: d.sign !== false };
   }
   const editable = () => cur && cur.status === 'draft';
 
@@ -212,7 +216,9 @@
   // A copy of any quote or invoice as a new draft (same customer, lines, tax and notes).
   function copyData(src, date, due) {
     const d = normalizeData(src.data);
-    return { v: 1, date, due, to: { ...d.to }, lines: d.lines.map((l) => ({ ...l })), tax: d.tax, notes: d.notes };
+    const out = { v: 1, date, due, to: { ...d.to }, lines: d.lines.map((l) => ({ ...l })), tax: d.tax, notes: d.notes };
+    if (src.kind === 'quote') Object.assign(out, { intro: d.intro, showTerms: d.showTerms, sign: d.sign });
+    return out;
   }
   function makeCopy() {
     const date = today();
@@ -225,6 +231,28 @@
     const date = addMonths(d.date, 1);
     const due = d.due ? addMonths(d.due, 1) : addDays(date, termsDays());
     newDoc('invoice', { customer_id: cur.customer_id, data: copyData(cur, date, due) });
+  }
+  // Started the wrong one? A draft can switch between quote and invoice: same customer, lines, tax and notes.
+  async function switchKind() {
+    if (!editable()) return;
+    const to = cur.kind === 'quote' ? 'invoice' : 'quote';
+    const adds = cur.data.lines.filter((l) => l.o).length;
+    if (to === 'invoice' && adds && !confirm(`Invoices bill every line, so the ${adds} optional add-on${adds === 1 ? '' : 's'} will become ordinary line${adds === 1 ? '' : 's'}. Remove any the customer didn't choose afterwards.\n\nSwitch to an invoice?`)) return;
+    await flush();
+    const old = cur;
+    const date = old.data.date || today();
+    const data = { ...normalizeData(old.data), due: to === 'quote' ? addDays(date, 30) : addDays(date, termsDays()) };
+    data.lines = data.lines.map(({ o, ...l }) => (to === 'invoice' ? l : { ...l, ...(o ? { o } : {}) }));
+    if (to === 'quote') Object.assign(data, { intro: data.intro || '', showTerms: true, sign: true });
+    try {
+      const { data: row, error } = await db.from('inv_docs').insert({ kind: to, data, customer_id: old.customer_id, source_id: old.source_id }).select(COLS).single().abortSignal(AbortSignal.timeout(10000));
+      if (error) throw error;
+      if (old.id) { await db.from('inv_docs').delete().eq('id', old.id); docs = docs.filter((r) => r.id !== old.id); }
+      docs.unshift(row);
+      cur = { ...row, data: normalizeData(row.data) };
+      say(`Now a ${to} draft.`);
+      renderAll();
+    } catch (e) { say(friendly(e)); }
   }
   async function deleteDraft() {
     if (!cur) return;
@@ -256,6 +284,7 @@
     const kept = cur.data.lines.filter((l) => l.d.trim() || l.p);
     if (!cur.data.to.name.trim()) { say(`Add who the ${k.noun} is for first.`); $('to-name') && $('to-name').focus(); return; }
     if (!kept.length) { say('Add at least one line first.'); return; }
+    if (cur.kind === 'quote' && !kept.some((l) => !l.o)) { say('Add at least one line that isn\'t an optional add-on first.'); return; }
     if (!confirm(`Mark this ${k.noun} as sent?\n\nIt gets the number ${nextNumber(cur.kind)} and can't be changed after that. (To fix a mistake later, cancel it and make a copy.)`)) return;
     if (kept.length !== cur.data.lines.length) cur.data.lines = kept;
     if (!(await save()) || !cur.id) return;
@@ -270,10 +299,30 @@
     if (!confirm(`Cancel ${numText(cur)}?\n\nIt stays on your list marked "Cancelled", with its number, so your records have no gaps. This can't be undone.`)) return;
     setStatus('void');
   }
+  // Which optional add-ons did the customer choose? (Their positions in the quote's lines.)
+  function chooseAddons() {
+    const adds = cur.data.lines.map((l, i) => ({ l, i })).filter((x) => x.l.o);
+    if (!adds.length) return Promise.resolve([]);
+    return new Promise((resolve) => {
+      const dlg = h('dialog', { class: 'pwdialog inv-dialog', 'aria-labelledby': 'addons-h' });
+      const boxes = adds.map((x) => h('label', { class: 'inv-addon-pick' }, h('input', { type: 'checkbox', value: String(x.i) }),
+        h('span', { text: x.l.d || 'Add-on' }), h('strong', { text: `+${money(lineAmount(x.l))}` })));
+      const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+      dlg.append(h('form', { method: 'dialog', class: 'stack', onsubmit: (e) => { e.preventDefault(); done(boxes.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => Number(c.value))); } },
+        h('h2', { class: 'panel-h', id: 'addons-h', text: 'Which add-ons did they choose?' }),
+        h('p', { class: 'mhint', text: 'Ticked add-ons go on the invoice as ordinary lines. The rest are left off.' }),
+        ...boxes,
+        h('div', { class: 'inv-new' }, h('button', { type: 'submit', class: 'btn', text: 'Make the invoice' }), h('button', { type: 'button', class: 'btn btn-secondary', text: 'Cancel', onclick: () => done(null) }))));
+      dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+      document.body.append(dlg); dlg.showModal();
+    });
+  }
   async function quoteToInvoice() {
     const date = today();
+    const addons = await chooseAddons();
+    if (addons === null) return;
     try {
-      const { data, error } = await db.rpc('inv_quote_to_invoice', { p_id: cur.id, p_date: date, p_due: addDays(date, termsDays()) }).abortSignal(AbortSignal.timeout(15000));
+      const { data, error } = await db.rpc('inv_quote_to_invoice', { p_id: cur.id, p_date: date, p_due: addDays(date, termsDays()), p_addons: addons }).abortSignal(AbortSignal.timeout(15000));
       if (error) throw error;
       const inv = Array.isArray(data) ? data[0] : data;
       docs = await loadDocs();
@@ -291,10 +340,12 @@
     cur.data.lines.forEach((l, i) => { if (lineRefs[i]) lineRefs[i].textContent = money(lineAmount(l)); });
     if (totalsEl) {
       const t = totals(cur.data);
-      totalsEl.replaceChildren(
+      const anyAdd = cur.data.lines.some((l) => l.o);
+      totalsEl.replaceChildren(...[ // (replaceChildren would print a null as the word "null")
         h('span', { text: `Subtotal ${money(t.sub)}` }),
         cur.data.tax ? h('span', { text: `Tax ${money(t.tax)}` }) : null,
-        h('strong', { text: `Total ${money(t.total)}` }));
+        h('strong', { text: `Total ${money(t.total)}` }),
+        anyAdd ? h('span', { class: 'inv-withadd', text: `With all add-ons ${money(totals(cur.data, true).total)}` }) : null].filter(Boolean));
     }
   }
 
@@ -304,15 +355,17 @@
     const sum = (rs) => rs.reduce((a, r) => a + Number(r.total_cents), 0);
     const chips = [['all', 'All'], ['invoice', 'Invoices'], ['quote', 'Quotes'], ['unpaid', 'Unpaid']];
     return h('div', { class: 'mgroup' },
-      h('div', { class: 'inv-new' },
-        h('button', { type: 'button', class: 'btn', text: '+ New invoice', onclick: () => newDoc('invoice') }),
-        h('button', { type: 'button', class: 'btn btn-secondary', text: '+ New quote', onclick: () => newDoc('quote') })),
+      h('div', { class: 'inv-pick', role: 'group', 'aria-label': 'Start something new' },
+        h('button', { type: 'button', class: 'inv-pick-card', onclick: () => newDoc('quote') },
+          h('strong', { text: '+ New quote' }), h('span', { text: 'A price before the job. They say yes, then you turn it into an invoice.' })),
+        h('button', { type: 'button', class: 'inv-pick-card', onclick: () => newDoc('invoice') },
+          h('strong', { text: '+ New invoice' }), h('span', { text: 'A bill for work you\'ve done. They pay it.' }))),
       unpaid.length ? h('p', { class: 'inv-owed' },
         h('span', { text: `Unpaid: ${money(sum(unpaid))} (${unpaid.length})` }),
         late.length ? h('span', { class: 'late', text: `Overdue: ${money(sum(late))} (${late.length})` }) : null) : null,
       docs.length ? h('div', { class: 'choices', role: 'group', 'aria-label': 'Show' }, chips.map(([id, label]) => h('button', {
         type: 'button', class: 'choice', 'aria-pressed': String(filter === id), onclick: () => { filter = id; renderList(); } }, label))) : null,
-      docs.length ? h('ul', { class: 'inv-list', id: 'inv-list' }) : h('p', { class: 'mhint', text: 'Nothing here yet. Start with "+ New invoice" or "+ New quote".' }));
+      docs.length ? h('ul', { class: 'inv-list', id: 'inv-list' }) : h('p', { class: 'mhint', text: 'Nothing here yet. Start with "+ New quote" or "+ New invoice".' }));
   }
   function renderList() {
     const ul = $('inv-list');
@@ -404,8 +457,8 @@
     return h('div', { class: 'mgroup' },
       h('h3', { text: 'Dates' }),
       h('div', { class: 'inv-two' }, labelled('d-date', 'Date', dateIn), labelled('d-due', KIND[cur.kind].due, dueIn)),
-      isInv ? h('div', { class: 'choices', role: 'group', 'aria-label': 'Payment terms' }, TERMS.map(([n, t]) => h('button', {
-        type: 'button', class: 'choice', 'aria-pressed': String(gap === n), onclick: () => { d.due = addDays(d.date, n); changed(true); } }, t))) : null);
+      h('div', { class: 'choices', role: 'group', 'aria-label': isInv ? 'Payment terms' : 'Quote valid for' }, (isInv ? TERMS : VALID).map(([n, t]) => h('button', {
+        type: 'button', class: 'choice', 'aria-pressed': String(gap === n), onclick: () => { d.due = addDays(d.date, n); changed(true); } }, t))));
   }
 
   function linesGroup() {
@@ -413,6 +466,7 @@
     lineRefs.length = 0;
     const box = h('div', { class: 'inv-lines' });
     d.lines.forEach((l, i) => {
+      const lineCls = l.o ? 'inv-line is-addon' : 'inv-line';
       const qty = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: qtyText(l.q), 'aria-label': `Line ${i + 1} quantity`,
         oninput: (e) => { const q = parseQty(e.target.value); e.target.classList.toggle('bad', q === null); if (q !== null) { l.q = q; changed(); } },
         onblur: (e) => { e.target.value = qtyText(l.q); e.target.classList.remove('bad'); } });
@@ -421,7 +475,7 @@
         onblur: (e) => { e.target.value = l.p ? centsText(l.p) : ''; e.target.classList.remove('bad'); } });
       const amt = h('span', { class: 'inv-amt', text: money(lineAmount(l)) });
       lineRefs[i] = amt;
-      box.append(h('div', { class: 'inv-line' },
+      box.append(h('div', { class: lineCls },
         h('div', { class: 'mrow' },
           h('input', { class: 'input', type: 'text', value: l.d, maxlength: '500', placeholder: i ? 'Another item or service' : 'What it\'s for, e.g. Menu design and setup', 'aria-label': `Line ${i + 1} description`,
             oninput: (e) => { l.d = e.target.value; changed(); } }),
@@ -430,6 +484,8 @@
           h('label', { class: 'inv-num' }, h('span', { text: 'Qty' }), qty),
           h('label', { class: 'inv-num' }, h('span', { text: 'Price each' }), price),
           d.tax ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: l.t !== false, onchange: (e) => { if (e.target.checked) delete l.t; else l.t = false; changed(); } }), 'Taxed') : null,
+          cur.kind === 'quote' ? h('label', { class: 'mini', title: 'Listed apart on the quote and not in its total. You pick which ones they chose when you turn it into an invoice.' },
+            h('input', { type: 'checkbox', checked: !!l.o, onchange: (e) => { if (e.target.checked) l.o = true; else delete l.o; changed(true); } }), 'Optional add-on') : null,
           amt)));
     });
     const taxIn = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: d.tax ? rateText(d.tax) : '', placeholder: '0',
@@ -439,11 +495,24 @@
       h('h3', { text: 'Lines' }),
       box,
       d.lines.length < 100 ? h('button', { type: 'button', class: 'addbtn', text: '+ Add a line', onclick: () => { d.lines.push({ d: '', q: 100, p: 0 }); changed(true); } }) : null,
-      h('p', { class: 'mhint', text: 'Use a minus price for a discount, e.g. -25.00.' }),
+      h('p', { class: 'mhint', text: cur.kind === 'quote' ? 'Use a minus price for a discount, e.g. -25.00. Tick "Optional add-on" for extras they can choose: they\'re listed apart and not in the total.' : 'Use a minus price for a discount, e.g. -25.00.' }),
       h('div', { class: 'inv-taxrow' }, labelled('d-tax', 'Sales tax %', taxIn), h('p', { class: 'mhint', text: 'Leave blank for no tax. Untick "Taxed" on lines that aren\'t taxed.' })),
       totalsEl);
   }
 
+  function quoteGroup() {
+    const d = cur.data;
+    return h('div', { class: 'mgroup' },
+      h('h3', { text: 'Quote extras' }),
+      labelled('q-intro', 'Opening message (optional)', h('textarea', { class: 'input mtext', rows: '3', maxlength: '1000',
+        placeholder: 'e.g. Thanks for the chance to quote. Here\'s what we talked about, ready to start as soon as you say yes.',
+        oninput: (e) => { d.intro = e.target.value; changed(); } }, d.intro)),
+      labelled('q-terms', 'Your terms (saved for all your quotes)', h('textarea', { class: 'input mtext', rows: '4', maxlength: '3000',
+        placeholder: 'e.g. 50% deposit to start, the rest on completion. Prices valid until the date above. Includes one round of changes.',
+        oninput: (e) => { profile.quoteTerms = e.target.value; saveProfile(); } }, profile.quoteTerms || '')),
+      h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: d.showTerms, onchange: (e) => { d.showTerms = e.target.checked; changed(); } }), 'Print my terms on this quote'),
+      h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: d.sign, onchange: (e) => { d.sign = e.target.checked; changed(); } }), 'Add an "Accepted by" line for their signature'));
+  }
   function notesGroup() {
     return h('div', { class: 'mgroup' },
       h('h3', { text: 'Notes (optional)' }),
@@ -500,8 +569,11 @@
     const wrap = h('div', { class: 'mfields' });
     wrap.append(listGroup());
     if (cur) {
-      wrap.append(h('h3', { class: 'inv-open-h', text: cur.status === 'draft' ? `Editing: ${KIND[cur.kind].noun} draft` : `${KIND[cur.kind].Title} ${numText(cur)}` }));
-      if (editable()) wrap.append(customerGroup(), datesGroup(), linesGroup(), notesGroup(), draftActions());
+      wrap.append(h('div', { class: 'inv-open' },
+        h('span', { class: `inv-kind kind-${cur.kind}`, text: KIND[cur.kind].Title }),
+        h('h3', { class: 'inv-open-h', text: cur.status === 'draft' ? 'Draft' : numText(cur) }),
+        editable() ? h('button', { type: 'button', class: 'linkbtn inv-switch', text: `Switch to ${cur.kind === 'quote' ? 'an invoice' : 'a quote'}`, onclick: switchKind }) : null));
+      if (editable()) wrap.append(...[customerGroup(), datesGroup(), linesGroup(), cur.kind === 'quote' ? quoteGroup() : null, notesGroup(), draftActions()].filter(Boolean));
       else wrap.append(sentPanel());
     }
     wrap.append(businessGroup());
@@ -521,7 +593,11 @@
     const accent = accentOf(from);
     const t = editable() ? totals(d) : { sub: Number(cur.subtotal_cents), tax: Number(cur.tax_cents), total: Number(cur.total_cents) };
     const stamp = cur.status === 'draft' ? 'Draft' : cur.status === 'paid' ? 'Paid' : cur.status === 'void' ? 'Cancelled' : null;
-    const lines = d.lines.filter((l) => l.d.trim() || l.p || editable());
+    const all = d.lines.filter((l) => l.d.trim() || l.p || editable());
+    const isQuote = cur.kind === 'quote';
+    const lines = isQuote ? all.filter((l) => !l.o) : all;
+    const addons = isQuote ? all.filter((l) => l.o) : [];
+    const terms = isQuote && d.showTerms && String(from.quoteTerms || '').trim();
     const anyTaxFree = d.tax && lines.some((l) => l.t === false);
     const blockLines = (arr) => arr.filter((x) => x && String(x).trim()).map((x) => h('span', { text: x }));
     const page = h('article', { class: 'inv-page', style: `--i-accent:${accent}` },
@@ -545,6 +621,7 @@
           h('dt', { text: 'Date' }), h('dd', { text: niceDate(d.date) }),
           d.due ? h('dt', { text: k.due }) : null, d.due ? h('dd', { text: niceDate(d.due) }) : null,
           cur.status === 'paid' && cur.paid_on ? h('dt', { text: 'Paid' }) : null, cur.status === 'paid' && cur.paid_on ? h('dd', { text: niceDate(cur.paid_on) }) : null)),
+      isQuote && d.intro.trim() ? h('p', { class: 'inv-intro', text: d.intro }) : null,
       h('table', { class: 'inv-table' },
         h('thead', {}, h('tr', {}, h('th', { text: 'Description' }), h('th', { class: 'n', text: 'Qty' }), h('th', { class: 'n', text: 'Price' }), h('th', { class: 'n', text: 'Amount' }))),
         h('tbody', {}, lines.map((l) => h('tr', {},
@@ -557,8 +634,22 @@
           h('dt', { text: 'Subtotal' }), h('dd', { text: money(t.sub) }),
           d.tax ? h('dt', { text: `Tax (${rateText(d.tax)}%)` }) : null, d.tax ? h('dd', { text: money(t.tax) }) : null,
           h('dt', { class: 'inv-total', text: cur.kind === 'quote' ? 'Total' : cur.status === 'paid' ? 'Total paid' : 'Total due' }), h('dd', { class: 'inv-total', text: money(t.total) }))),
+      addons.length ? h('section', { class: 'inv-addons' },
+        h('span', { class: 'inv-lab', text: 'Optional add-ons · not included in the total' }),
+        h('table', { class: 'inv-table' }, h('tbody', {}, addons.map((l) => h('tr', {},
+          h('td', { text: (d.sign ? '☐  ' : '') + (l.d || '') }),
+          h('td', { class: 'n', text: l.q !== 100 ? `${qtyText(l.q)} × ${money(l.p)}` : '' }),
+          h('td', { class: 'n', text: `+${money(lineAmount(l))}` }))))),
+        h('p', { class: 'inv-addon-sum', text: `Total with all add-ons: ${money(totals(d, true).total)}` })) : null,
       d.notes.trim() ? h('section', { class: 'inv-notes' }, h('span', { class: 'inv-lab', text: 'Notes' }), h('p', { text: d.notes })) : null,
-      cur.kind === 'invoice' && from.pay && from.pay.trim() && cur.status !== 'void' ? h('section', { class: 'inv-notes' }, h('span', { class: 'inv-lab', text: 'How to pay' }), h('p', { text: from.pay })) : null);
+      cur.kind === 'invoice' && from.pay && from.pay.trim() && cur.status !== 'void' ? h('section', { class: 'inv-notes' }, h('span', { class: 'inv-lab', text: 'How to pay' }), h('p', { text: from.pay })) : null,
+      terms ? h('section', { class: 'inv-notes inv-terms' }, h('span', { class: 'inv-lab', text: 'Terms' }), h('p', { text: terms })) : null,
+      isQuote && d.sign ? h('section', { class: 'inv-sign' },
+        h('span', { class: 'inv-lab', text: addons.length ? 'Accepted by · tick any add-ons above' : 'Accepted by' }),
+        h('div', { class: 'inv-sign-row' },
+          h('div', {}, h('i'), h('span', { text: 'Name' })),
+          h('div', {}, h('i'), h('span', { text: 'Signature' })),
+          h('div', { class: 'inv-sign-date' }, h('i'), h('span', { text: 'Date' })))) : null);
     return page;
   }
   function scalePreview() {
