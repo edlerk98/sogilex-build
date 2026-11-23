@@ -279,6 +279,7 @@
   }
   const nextNumber = (kind) => KIND[kind].prefix + String(1 + Math.max(0, ...docs.filter((r) => r.kind === kind && r.number).map((r) => r.number))).padStart(4, '0');
   async function markSent() {
+    if (unreadable()) return;
     const k = KIND[cur.kind];
     // Blank lines (no words and no price) are left off.
     const kept = cur.data.lines.filter((l) => l.d.trim() || l.p);
@@ -467,12 +468,21 @@
     const box = h('div', { class: 'inv-lines' });
     d.lines.forEach((l, i) => {
       const lineCls = l.o ? 'inv-line is-addon' : 'inv-line';
+      // Something that can't be read as a number stays in the box (red, with a message) instead of quietly
+      // switching back to the old number, which looked like "my change didn't take".
+      const warn = h('p', { class: 'inv-badnum', role: 'alert', hidden: true });
+      const check = () => {
+        const msgs = [];
+        if (qty.classList.contains('bad')) msgs.push(`Couldn't read "${qty.value.trim()}" as a quantity. Use a plain number, like 2 or 1.5.`);
+        if (price.classList.contains('bad')) msgs.push(`Couldn't read "${price.value.trim()}" as a price. Use dollars and cents, like 1500 or 1,499.99. The invoice still shows ${money(l.p)}.`);
+        warn.textContent = msgs.join(' '); warn.hidden = !msgs.length;
+      };
       const qty = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: qtyText(l.q), 'aria-label': `Line ${i + 1} quantity`,
-        oninput: (e) => { const q = parseQty(e.target.value); e.target.classList.toggle('bad', q === null); if (q !== null) { l.q = q; changed(); } },
-        onblur: (e) => { e.target.value = qtyText(l.q); e.target.classList.remove('bad'); } });
+        oninput: (e) => { const q = parseQty(e.target.value); e.target.classList.toggle('bad', q === null); if (q !== null) { l.q = q; changed(); } if (q !== null) check(); },
+        onblur: (e) => { if (!e.target.classList.contains('bad')) e.target.value = qtyText(l.q); check(); } });
       const price = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: l.p ? centsText(l.p) : '', placeholder: '0.00', 'aria-label': `Line ${i + 1} price each`,
-        oninput: (e) => { const p = parseMoney(e.target.value); e.target.classList.toggle('bad', p === null); if (p !== null) { l.p = p; changed(); } },
-        onblur: (e) => { e.target.value = l.p ? centsText(l.p) : ''; e.target.classList.remove('bad'); } });
+        oninput: (e) => { const p = parseMoney(e.target.value); e.target.classList.toggle('bad', p === null); if (p !== null) { l.p = p; changed(); } if (p !== null) check(); },
+        onblur: (e) => { if (!e.target.classList.contains('bad')) e.target.value = l.p ? centsText(l.p) : ''; check(); } });
       const amt = h('span', { class: 'inv-amt', text: money(lineAmount(l)) });
       lineRefs[i] = amt;
       box.append(h('div', { class: lineCls },
@@ -486,7 +496,8 @@
           d.tax ? h('label', { class: 'mini' }, h('input', { type: 'checkbox', checked: l.t !== false, onchange: (e) => { if (e.target.checked) delete l.t; else l.t = false; changed(); } }), 'Taxed') : null,
           cur.kind === 'quote' ? h('label', { class: 'mini', title: 'Listed apart on the quote and not in its total. You pick which ones they chose when you turn it into an invoice.' },
             h('input', { type: 'checkbox', checked: !!l.o, onchange: (e) => { if (e.target.checked) l.o = true; else delete l.o; changed(true); } }), 'Optional add-on') : null,
-          amt)));
+          amt),
+        warn));
     });
     const taxIn = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: d.tax ? rateText(d.tax) : '', placeholder: '0',
       oninput: (e) => { const r = parseRate(e.target.value); e.target.classList.toggle('bad', r === null); if (r !== null) { const had = !!d.tax; d.tax = r; changed(had !== !!r); } } });
@@ -676,8 +687,16 @@
   function renderAll() { renderEditor(); renderPreview(); }
 
   // ---------- start ----------
+  // A red number box means what's typed there isn't on the page yet: say so instead of printing the old number.
+  function unreadable() {
+    const bad = document.querySelector('#fields .input.bad');
+    if (!bad) return false;
+    say('One of the numbers couldn\'t be read (it\'s outlined in red). Fix it first, so the page shows what you typed.');
+    bad.focus(); bad.scrollIntoView({ block: 'center' });
+    return true;
+  }
   $('print').addEventListener('click', () => {
-    if (!cur) return;
+    if (!cur || unreadable()) return;
     renderPreview();
     $('print-root').replaceChildren(makePage());
     // The PDF's suggested file name: "INV-0003 Poor Richard's".
