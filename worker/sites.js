@@ -10,10 +10,10 @@
 //   api.sogilex.net         publish / unpublish, called by build.sogilex.com with the person's sign-in.
 //   sogilex.net, www        redirect to sogilex.com.
 //
-// No secrets: publishing is checked by Supabase database functions using the person's own sign-in token,
-// and the Supabase key here is the public (publishable) one.
+// Publishing is checked by Supabase database functions using the person's own sign-in token, and the Supabase key
+// here is the public (publishable) one. The one secret, FORM_SECRET, only proves contact forms came through here.
 //
-// Bindings: SITES (KV namespace), SUPABASE_URL, SUPABASE_KEY (publishable).
+// Bindings: SITES (KV namespace), SUPABASE_URL, SUPABASE_KEY (publishable), FORM_SECRET (secret: contact forms, 027).
 
 const ROOT = 'sogilex.net';
 const BUILD_ORIGIN = 'https://build.sogilex.com';
@@ -507,7 +507,10 @@ async function form(req, env, slug, url) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip + '|' + day));
   const ipHash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
   try {
-    const ok = await rpc(env, 'submit_site_message', { p_slug: slug, p_fields: fields, p_ip_hash: ipHash });
+    // FORM_SECRET (a Cloudflare secret) proves the message came through this Worker, not a direct call (027).
+    const args = { p_slug: slug, p_fields: fields, p_ip_hash: ipHash };
+    if (env.FORM_SECRET) args.p_secret = env.FORM_SECRET;
+    const ok = await rpc(env, 'submit_site_message', args);
     if (!ok) return page(429, 'Please try again later', "Too many messages were sent from here in a short time. Please try again in an hour.", url.origin + '/');
   } catch {
     return page(502, 'Something went wrong', "Your message didn't go through. Please try again in a few minutes.", url.origin + '/');

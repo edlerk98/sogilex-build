@@ -41,6 +41,10 @@ with Sogilex sign-in).
 - Served with a Content-Security-Policy that blocks all scripts and outside loads (images only from the site itself
   or data: URLs), plus a sandbox.
 - Contact forms: at most 30 messages per site per hour and 5 per visitor per hour (visitor = hashed IP, per day).
+  Since 2026-11-23 (027) only the Worker can store a message: it sends the Cloudflare secret `FORM_SECRET`, and
+  `submit_site_message` checks it against the SHA-256 fingerprint in `app_settings` 'form_secret_sha256'. Direct calls
+  with the public key are refused, so the per-visitor limit can't be dodged. Emergency off switch: delete that row.
+  New secret: set FORM_SECRET on the Worker, then store the new fingerprint.
 
 ## Online menus
 `name.sogilex.net/menu` is built by the Worker from `public_menu(name)` (the owner's menu JSON, logo, logo colours),
@@ -49,7 +53,9 @@ every piece of text escaped, served with the same CSP and footer; cached 60 s. O
 
 ## Deploying the Worker
 Cloudflare API with the "Sogilex publishing" token (saved on the Sogilex cloud environment). Upload
-`worker/sites.js` as module `sites.js` with bindings `SITES` (KV), `SUPABASE_URL`, `SUPABASE_KEY` (publishable).
+`worker/sites.js` as module `sites.js` with bindings `SITES` (KV), `SUPABASE_URL`, `SUPABASE_KEY` (publishable) and
+**`{"name":"FORM_SECRET","type":"inherit"}`** (keeps the existing secret; leaving it out deletes it and every contact
+form then fails).
 
 ## Not done yet
 - Email notifications for new messages (needs a Resend API key).
