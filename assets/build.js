@@ -378,7 +378,12 @@
     if (slugValue.length < 3) { st.textContent = 'Choose an address of at least 3 letters or numbers.'; st.classList.add('err'); $('pub-slug').focus(); return; }
     $('pub-go').disabled = true; st.textContent = 'Publishing…';
     try {
-      const out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue, preview: ogEffective() });
+      let out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue, preview: ogEffective() });
+      // Sites with many new photos are copied in rounds (at most 45 new photos each): keep going until all are there.
+      for (let round = 0; out.more && round < 4; round++) {
+        st.textContent = 'Copying the rest of your photos…';
+        out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue, preview: ogEffective() });
+      }
       st.innerHTML = ''; st.append('Live at ', Object.assign(document.createElement('a'), { href: out.url, target: '_blank', rel: 'noopener', textContent: out.url }), '. It can take a minute to appear the very first time.');
       st.classList.add('ok');
       await loadSite(); loadBuilds(false);

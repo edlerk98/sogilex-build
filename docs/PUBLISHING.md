@@ -25,7 +25,7 @@ with Sogilex sign-in).
   ids up in `site_photos` with the owner's own sign-in (so only their own photos), downloads each from the private
   `site-photos` bucket, stores it in KV as `photo:<name>:<id>` (list in `photos:<name>`), and points the page at
   `/photos/<id>.jpg`. Deleted or someone else's photos become a blank image. Republish drops copies no longer used;
-  unpublish drops all. At most 40 photos per site (Workers allow 50 fetches per request).
+  unpublish drops all. Incremental since 2026-11-23: photos already in `photos:<name>` are not copied again (a photo id's file never changes), so a republish costs a few KV writes; at most 45 NEW photos per publish (free Workers allow 50 outside requests per visit), and `/publish` answers `more: true` until all are copied (Build calls it again). Before this, every publish re-copied every photo (13 republishes of a 46-photo site used 525 of the 1,000 free daily KV writes on 2026-11-22) and a 40-photo cap left 6 of the photography site's 46 photos blank.
 - Online menu photos (2026-11-20): the menu text holds photo ids (`hero`, `sections[].photo`). After a save that
   changes them, the Menus page calls `POST api.sogilex.net/menu-photos` with the owner's sign-in; the Worker reads
   their own `online_menus` row, copies up to 20 of their own photos to KV `mphoto:<name>:<id>` (list

@@ -106,13 +106,14 @@ async function api(req, env, url) {
       const result = await rpc(env, 'publish_site', args, token);
       // The link preview photo (025): a chosen photo is copied too, even if the page itself doesn't show it.
       const pick = typeof result.preview === 'string' && UUID.test(result.preview) ? result.preview : null;
-      const { html: withPhotos, kept, order } = await copyPhotos(env, token, result.slug, result.html, pick ? [pick] : []);
+      // A renamed site starts with no photos at its new name, so drop the old name's copies first.
+      if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); await env.SITES.delete('logo:' + result.old_slug); }
+      const { html: withPhotos, kept, order, more } = await copyPhotos(env, token, result.slug, result.html, pick ? [pick] : []);
       const hasLogo = await copyLogo(env, result.slug, result.logo);
       const og = linkPreview(result.slug, result.preview, kept, order, hasLogo);
       const html = await prepare(withPhotos, result.slug, hasLogo, og);
       await env.SITES.put('site:' + result.slug, html);
-      if (result.old_slug) { await env.SITES.delete('site:' + result.old_slug); await dropPhotos(env, result.old_slug, []); await env.SITES.delete('logo:' + result.old_slug); }
-      return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/` });
+      return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/`, more: !!more });
     }
     if (url.pathname === '/menu-photos') return json(await copyMenuPhotos(env, token));
     if (url.pathname === '/unpublish') {
@@ -134,14 +135,23 @@ async function api(req, env, url) {
 // can remove the ones no longer used. Photos that were deleted are left out (a blank image takes their place).
 const PHOTO_TAG = /sogilex:photo:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
 const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-const MAX_SITE_PHOTOS = 40; // each copy is one fetch; Workers allow 50 per request
+// A Worker on the free plan may make 50 outside requests per visit: publishing uses 2 (publish_site, site_photos) and one
+// per photo it copies, so each publish copies at most 45 NEW photos. Photos already copied for this site are kept as
+// they are (a photo's id never changes, so its file never does): a republish costs a few KV writes, not one per photo
+// (on 2026-11-22 every republish of a 46-photo site re-copied 40 photos and used half the free daily KV writes). When
+// more photos are waiting, publish answers more: true and Build simply calls publish again.
+const MAX_NEW_PHOTOS = 45;
 
 async function copyPhotos(env, token, slug, html, extra) {
   const order = [...new Set([...html.matchAll(PHOTO_TAG)].map((m) => m[1]))]; // the page's photos, first to last
-  const ids = [...new Set([...order.slice(0, MAX_SITE_PHOTOS - 1), ...(extra || []), ...order.slice(MAX_SITE_PHOTOS - 1)])].slice(0, MAX_SITE_PHOTOS);
-  const kept = [];
-  if (ids.length) {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${ids.join(',')})`, {
+  const want = [...new Set([...(extra || []), ...order])];
+  let old = [];
+  try { old = JSON.parse((await env.SITES.get('photos:' + slug)) || '[]'); } catch { /* none */ }
+  const kept = want.filter((id) => old.includes(id));
+  const need = want.filter((id) => !old.includes(id));
+  const batch = need.slice(0, MAX_NEW_PHOTOS);
+  if (batch.length) {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${batch.join(',')})`, {
       headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
     });
     const rows = res.ok ? await res.json() : [];
@@ -156,9 +166,11 @@ async function copyPhotos(env, token, slug, html, extra) {
       kept.push(r.id);
     }));
   }
+  const more = need.length > batch.length;
   await dropPhotos(env, slug, kept);
-  await env.SITES.put('photos:' + slug, JSON.stringify(kept));
-  return { html: html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG)), kept, order };
+  const same = kept.length === old.length && kept.every((id) => old.includes(id));
+  if (kept.length && !same) await env.SITES.put('photos:' + slug, JSON.stringify(kept));
+  return { html: html.replace(PHOTO_TAG, (_, id) => (kept.includes(id) ? `/photos/${id}.jpg` : BLANK_PNG)), kept, order, more };
 }
 
 // The picture for shared links: the chosen photo, the logo, or (automatic) the first photo on the page, else the
@@ -189,9 +201,12 @@ async function copyMenuPhotos(env, token) {
   const d = row.data || {};
   const ids = [...new Set([d.hero, ...(Array.isArray(d.sections) ? d.sections.map((s) => s && s.photo) : [])]
     .filter((x) => typeof x === 'string' && UUID.test(x)))].slice(0, 20);
-  const kept = [];
-  if (ids.length) {
-    const r2 = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${ids.join(',')})`, {
+  let old = [];
+  try { old = JSON.parse((await env.SITES.get('mphotos:' + row.slug)) || '[]'); } catch { /* none */ }
+  const kept = ids.filter((id) => old.includes(id)); // already copied: a photo id's file never changes
+  const need = ids.filter((id) => !old.includes(id));
+  if (need.length) {
+    const r2 = await fetch(`${env.SUPABASE_URL}/rest/v1/site_photos?select=id,user_id&id=in.(${need.join(',')})`, {
       headers: { apikey: env.SUPABASE_KEY, Authorization: `Bearer ${token}` },
     });
     const photos = r2.ok ? await r2.json() : [];
@@ -206,10 +221,8 @@ async function copyMenuPhotos(env, token) {
       kept.push(p.id);
     }));
   }
-  let old = [];
-  try { old = JSON.parse((await env.SITES.get('mphotos:' + row.slug)) || '[]'); } catch { /* none */ }
   await Promise.all(old.filter((id) => !kept.includes(id)).map((id) => env.SITES.delete(`mphoto:${row.slug}:${id}`)));
-  await env.SITES.put('mphotos:' + row.slug, JSON.stringify(kept));
+  if (!(kept.length === old.length && kept.every((id) => old.includes(id)))) await env.SITES.put('mphotos:' + row.slug, JSON.stringify(kept));
   return { slug: row.slug, kept };
 }
 
@@ -229,6 +242,8 @@ async function copyLogo(env, slug, logo) {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50) { await env.SITES.delete('logo:' + slug); return false; } // not a PNG
+  const now = await env.SITES.get('logo:' + slug, 'arrayBuffer');
+  if (now && now.byteLength === bytes.length && new Uint8Array(now).every((v, k) => v === bytes[k])) return true; // unchanged: no write
   await env.SITES.put('logo:' + slug, bytes);
   return true;
 }
