@@ -477,10 +477,14 @@
         if (price.classList.contains('bad')) msgs.push(`Couldn't read "${price.value.trim()}" as a price. Use dollars and cents, like 1500 or 1,499.99. The invoice still shows ${money(l.p)}.`);
         warn.textContent = msgs.join(' '); warn.hidden = !msgs.length;
       };
-      const qty = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: qtyText(l.q), 'aria-label': `Line ${i + 1} quantity`,
+      // Clicking into a number selects it, so typing replaces the old number instead of adding to its end
+      // ("699.00" + "$899" = "699.00$899", which can't be read).
+      // (The mouse-up that ends the click would put the cursor back, so that one mouse-up is ignored.)
+      const pick = (e) => { const el = e.target; el.select(); el.addEventListener('mouseup', (m) => m.preventDefault(), { once: true }); };
+      const qty = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: qtyText(l.q), 'aria-label': `Line ${i + 1} quantity`, onfocus: pick,
         oninput: (e) => { const q = parseQty(e.target.value); e.target.classList.toggle('bad', q === null); if (q !== null) { l.q = q; changed(); } if (q !== null) check(); },
         onblur: (e) => { if (!e.target.classList.contains('bad')) e.target.value = qtyText(l.q); check(); } });
-      const price = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: l.p ? centsText(l.p) : '', placeholder: '0.00', 'aria-label': `Line ${i + 1} price each`,
+      const price = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: l.p ? centsText(l.p) : '', placeholder: '0.00', 'aria-label': `Line ${i + 1} price each`, onfocus: pick,
         oninput: (e) => { const p = parseMoney(e.target.value); e.target.classList.toggle('bad', p === null); if (p !== null) { l.p = p; changed(); } if (p !== null) check(); },
         onblur: (e) => { if (!e.target.classList.contains('bad')) e.target.value = l.p ? centsText(l.p) : ''; check(); } });
       const amt = h('span', { class: 'inv-amt', text: money(lineAmount(l)) });
