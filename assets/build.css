@@ -399,3 +399,20 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .pub-blanks[hidden] { display: none; }
 .pub-blanks p { margin: 0; flex: 1 1 260px; font-size: 14px; color: var(--text); }
 .pub-blanks .ghost { min-height: 40px; font-size: 14px; }
+
+/* Your own web address (038), in the Publish box */
+.own { margin: 10px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.own[hidden] { display: none; }
+.own-h { margin: 0; font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+.own p { margin: 0; font-size: 14px; }
+.own-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.own-row .input { flex: 1 1 220px; width: auto; }
+.own-row .btn, .own-row .ghost { min-height: 44px; font-size: 14px; }
+.own-rec { width: 100%; border-collapse: collapse; font-size: 14px; }
+.own-rec th { text-align: left; font: 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); padding: 6px 8px 6px 0; }
+.own-rec td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.own-rec code { font-size: 14px; color: var(--text); }
+.own-state { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--ctl); font-size: 14px; }
+.own-state.ok { border-color: rgba(120, 220, 160, .6); }
+.own-state.wait { border-color: rgba(255, 154, 77, .6); }
+.own-state.bad { border-color: #F2496B; }

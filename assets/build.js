@@ -275,6 +275,89 @@
       site = data || site;
     } catch { site = { can_publish: false, slug: null, messages: 0 }; }
     refreshPublish();
+    loadOwn();
+  }
+
+  // ---------- your own web address (038) ----------
+  // www.yourbusiness.com instead of name.sogilex.net: Do it yourself + the $5/month add-on, or included (done-for-you
+  // website plans, Team, Complimentary). The customer buys the address anywhere and adds one CNAME record pointing at
+  // domains.sogilex.net; the `domains` function asks Cloudflare and keeps the state here. Sogilex doesn't sell domains.
+  let own = null; // my_domain()
+  async function fnCall(name, body) {
+    const s = await session(); if (!s) throw new Error('Your sign-in has expired. Sign in again.');
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || `That didn't work (${res.status}).`);
+    return j;
+  }
+  const ownSay = (t, err) => { const m = $('own-status'); m.textContent = t || ''; m.className = 'status' + (err ? ' err' : t ? ' ok' : ''); };
+  // The record's "Name": www for www.x.com, shop for shop.x.com, @ for the bare x.com (simple two-part endings only).
+  function recordName(host) { const p = host.split('.'); return p.length > 2 ? p.slice(0, -2).join('.') : '@'; }
+  async function loadOwn() {
+    const box = $('own'); if (!box) return;
+    if (!site.can_publish) { box.hidden = true; return; }
+    try {
+      const { data, error } = await db.rpc('my_domain').abortSignal(AbortSignal.timeout(8000));
+      if (error) throw error;
+      own = data || {};
+    } catch { box.hidden = true; return; }
+    box.hidden = false;
+    drawOwn();
+    if (own.hostname && own.status === 'pending') checkOwn(true);
+  }
+  async function checkOwn(quiet) {
+    try { const j = await fnCall('domains', { action: 'status' }); Object.assign(own, j); drawOwn(); if (!quiet) ownSay(''); }
+    catch (e) { if (!quiet) ownSay(e.message, true); }
+  }
+  function drawOwn() {
+    const body = $('own-body'); const el = (t, a, ...k) => { const n = document.createElement(t); Object.entries(a || {}).forEach(([x, v]) => { if (x === 'text') n.textContent = v; else if (x.startsWith('on')) n.addEventListener(x.slice(2), v); else n.setAttribute(x, v); }); k.forEach((c) => c != null && n.append(c)); return n; };
+    const parts = [];
+    if (!own.eligible) {
+      if (own.plan === 'diy' && own.billing_managed) {
+        parts.push(el('p', { text: 'Show your site at www.yourbusiness.com instead of a sogilex.net address. $5 a month, added to your Do it yourself plan (charged now for the rest of this month).' }),
+          el('div', { class: 'own-row' }, el('button', { type: 'button', class: 'btn', text: 'Add my own address ($5/month)', onclick: (e) => addon(true, e.target) })));
+      } else {
+        parts.push(el('p', { text: 'Show your site at www.yourbusiness.com instead of a sogilex.net address. It comes with Do it yourself as a $5/month add-on.' }),
+          el('p', {}, el('a', { href: 'account/#sec-plan', text: 'See plans' })));
+      }
+    } else if (!own.site) {
+      parts.push(el('p', { text: 'Publish your site first, then connect your own address to it.' }));
+    } else if (!own.hostname) {
+      const input = el('input', { class: 'input', id: 'own-host', type: 'text', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', maxlength: '253', placeholder: 'www.yourbusiness.com', 'aria-label': 'Your web address' });
+      parts.push(el('p', { text: 'Buy your address from any domain seller (about $12 a year), then type it here. Use the www version, like www.yourbusiness.com.' }),
+        el('form', { class: 'own-row', novalidate: '', onsubmit: (e) => { e.preventDefault(); connect(input.value, e.submitter || e.target.querySelector('button')); } }, input, el('button', { type: 'submit', class: 'btn', text: 'Connect' })));
+      if (own.addon && !own.included) parts.push(el('p', { class: 'muted' }, 'Not using it? ', el('button', { type: 'button', class: 'linkish', text: 'Stop the $5 add-on', onclick: (e) => addon(false, e.target) })));
+    } else {
+      const h = own.hostname; const live = own.status === 'active';
+      parts.push(el('p', {}, el('span', { class: 'own-state ' + (live ? 'ok' : own.status === 'failed' ? 'bad' : 'wait'), text: live ? `Live at ${h}` : own.status === 'failed' ? `${h}: didn't work` : `${h}: waiting` })));
+      if (live) parts.push(el('p', {}, 'Your site is at ', el('a', { href: `https://${h}/`, target: '_blank', rel: 'noopener', text: `https://${h}` }), `. ${site.slug}.sogilex.net now forwards there.`));
+      else {
+        parts.push(el('p', { text: own.detail || 'Add this record where you bought your address (its DNS settings):' }),
+          el('table', { class: 'own-rec' }, el('thead', {}, el('tr', {}, el('th', { text: 'Type' }), el('th', { text: 'Name' }), el('th', { text: 'Value / target' }))),
+            el('tbody', {}, el('tr', {}, el('td', {}, el('code', { text: 'CNAME' })), el('td', {}, el('code', { text: recordName(h) })), el('td', {}, el('code', { text: own.target || 'domains.sogilex.net' }))))),
+          el('p', { class: 'muted', text: recordName(h) === 'www' ? `Also set ${h.slice(4)} (without www) to forward to https://${h}: most domain sellers call it "URL forwarding" or "redirect".` : "Most domain sellers can't point the bare address (without www) here. If yours can't, use the www version instead." }),
+          el('div', { class: 'own-row' }, el('button', { type: 'button', class: 'ghost', text: 'Check again', onclick: async (e) => { e.target.disabled = true; ownSay('Checking…'); await checkOwn(false); e.target.disabled = false; } })));
+      }
+      parts.push(el('p', { class: 'muted' }, el('button', { type: 'button', class: 'linkish', text: 'Disconnect this address', onclick: (e) => disconnect(e.target) })));
+    }
+    body.replaceChildren(...parts);
+  }
+  async function connect(value, btn) {
+    if (btn) btn.disabled = true; ownSay('Connecting…');
+    try { const j = await fnCall('domains', { action: 'connect', hostname: value }); Object.assign(own, j); drawOwn(); ownSay('Added. Now add the record above where you bought your address.'); }
+    catch (e) { ownSay(e.message, true); if (btn) btn.disabled = false; }
+  }
+  async function disconnect(btn) {
+    if (!confirm(`Disconnect ${own.hostname}? Your site stays at ${site.slug}.sogilex.net.`)) return;
+    btn.disabled = true;
+    try { await fnCall('domains', { action: 'remove' }); own.hostname = null; own.status = null; drawOwn(); ownSay('Disconnected.'); }
+    catch (e) { ownSay(e.message, true); btn.disabled = false; }
+  }
+  async function addon(on, btn) {
+    if (!on && !confirm('Stop the $5 add-on? Your own address will stop working.')) return;
+    btn.disabled = true; ownSay(on ? 'Adding it to your plan…' : 'Stopping it…');
+    try { await fnCall('billing', { action: 'domain_addon', on }); await loadOwn(); ownSay(on ? 'Added. Now connect your address.' : 'Stopped.'); }
+    catch (e) { ownSay(e.message, true); btn.disabled = false; }
   }
   // Plans without publishing (the free trial): say how to get it. Beta includes publishing (024).
   async function showPlanNote() {
