@@ -207,9 +207,18 @@
           h('a', { class: 'btn btn-secondary', href: `../checkout/?plan=${encodeURIComponent(x.id)}&billing=${billing}`, text: `Choose ${shortName(x)}` })))));
     }
     drawChooser();
-    const toggle = h('button', { type: 'button', class: 'btn', text: 'Change plan' });
-    toggle.addEventListener('click', () => { chooser.hidden = !chooser.hidden; toggle.textContent = chooser.hidden ? 'Change plan' : 'Hide plans'; });
-    if (location.hash === '#sec-plan') { chooser.hidden = false; toggle.textContent = 'Hide plans'; }
+    // Paid through Stripe: Stripe's own page changes the card, switches plan, shows receipts and cancels.
+    // Complimentary and Team accounts were given by hand: nothing to change or pay.
+    const handGiven = ['comp', 'team'].includes(pl.id);
+    let toggle = null;
+    if (d.billing_managed) {
+      toggle = h('button', { type: 'button', class: 'btn', text: 'Manage billing' });
+      toggle.addEventListener('click', () => openPortal(toggle));
+    } else if (!handGiven) {
+      toggle = h('button', { type: 'button', class: 'btn', text: 'Change plan' });
+      toggle.addEventListener('click', () => { chooser.hidden = !chooser.hidden; toggle.textContent = chooser.hidden ? 'Change plan' : 'Hide plans'; });
+      if (location.hash === '#sec-plan') { chooser.hidden = false; toggle.textContent = 'Hide plans'; }
+    }
     return section('plan', 'Your plan', null, [
       h('div', { class: 'acct-plan-now' },
         h('div', {},
@@ -217,12 +226,26 @@
           h('p', { class: 'muted', text: [priceLine(pl, d.billing), d.period_end ? `renews ${day(d.period_end)}` : '', d.status && d.status !== 'active' ? d.status.replace('_', ' ') : ''].filter(Boolean).join(' · ') }),
           h('p', { class: 'muted acct-hint', text: pl.blurb })),
         toggle),
-      req ? h('p', { class: 'acct-note acct-req', text: `You asked to switch to ${shortName(req)}${d.requested_billing ? ` (${d.requested_billing === 'year' ? 'yearly' : 'monthly'})` : ''} on ${day(d.requested_at)}. Payments aren't open yet: we'll email you when you can finish.` }) : null,
+      d.status === 'past_due' ? h('p', { class: 'acct-note acct-req', text: "Your last payment didn't go through. Use Manage billing to update your card, so your plan doesn't stop." }) : null,
+      req && !d.billing_managed ? h('p', { class: 'acct-note acct-req', text: `You asked to switch to ${shortName(req)}${d.requested_billing ? ` (${d.requested_billing === 'year' ? 'yearly' : 'monthly'})` : ''} on ${day(d.requested_at)}. Payments aren't open yet: we'll email you when you can finish.` }) : null,
       h('p', { class: 'acct-hint muted', text: `${when}:` }),
       h('div', { class: 'acct-meters' }, meters),
       h('p', { class: 'muted acct-hint', text: d.can_publish ? 'Publishing your website and online menu: included.' : 'Publishing your website and online menu: not included in this plan.' }),
-      chooser,
+      d.billing_managed || handGiven ? null : chooser,
     ]);
+  }
+  async function openPortal(btn) {
+    btn.disabled = true; btn.textContent = 'Opening…';
+    try {
+      const { data: { session: s } } = await db.auth.getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/billing`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY },
+        body: JSON.stringify({ action: 'portal' }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.url) throw new Error(j.error || "Couldn't open billing. Try again.");
+      location.href = j.url;
+    } catch (e) { btn.disabled = false; btn.textContent = 'Manage billing'; alert((e && e.message) || "Couldn't open billing. Try again."); }
   }
 
   function settings(user, mail) {
