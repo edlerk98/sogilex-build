@@ -393,3 +393,9 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .up-bar.up-full { border-color: #F2496B; color: var(--text); }
 .up-tag { font: 12px var(--mono, monospace); letter-spacing: .12em; text-transform: uppercase; color: #FF9A4D; }
 .up-foot .linkbtn { background: none; border: 0; padding: 0; color: #FF9A4D; font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* Blanks left on the page ([PHONE NUMBER]...), in the Publish box */
+.pub-blanks { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 4px 0 0; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255, 154, 77, .55); background: rgba(255, 154, 77, .08); }
+.pub-blanks[hidden] { display: none; }
+.pub-blanks p { margin: 0; flex: 1 1 260px; font-size: 14px; color: var(--text); }
+.pub-blanks .ghost { min-height: 40px; font-size: 14px; }
