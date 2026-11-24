@@ -37,10 +37,30 @@ export default {
     // "Always Use HTTPS" does this too; this keeps it true if that setting is ever turned off.) 308 keeps a POST a POST.
     if (url.protocol === 'http:') return Response.redirect('https://' + url.host + url.pathname + url.search, 308);
     if (host === ROOT || host === 'www.' + ROOT) return Response.redirect('https://sogilex.com/', 301);
-    if (!host.endsWith('.' + ROOT)) return page(404, 'Not found', 'There is nothing here.');
+    if (!host.endsWith('.' + ROOT)) {
+      // Someone's own web address (038), e.g. www.rosiesdiner.com pointed at domains.sogilex.net.
+      const own = await domainSite(env, host);
+      if (!own) return notConnected(host);
+      const res = await serveSite(req, env, url, own, host);
+      // No year-long "always https" promise on a domain we don't control: the owner may move it elsewhere later.
+      const out = new Response(res.body, res); out.headers.delete('Strict-Transport-Security');
+      return out;
+    }
     const slug = host.slice(0, -(ROOT.length + 1));
     if (slug === 'api') return api(req, env, url);
     if (!/^[a-z0-9-]{3,32}$/.test(slug)) return notFound();
+    // A site with its own address: visitors (and Google) are sent there. Contact forms posted here still work.
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname !== '/__form') {
+      const d = await siteDomain(env, slug);
+      if (d) return Response.redirect(`https://${d}${url.pathname}${url.search}`, 301);
+    }
+    return serveSite(req, env, url, slug, null);
+  },
+};
+
+// Serves one site's pages and files, at name.sogilex.net or at its own address (`own`).
+async function serveSite(req, env, url, slug, own) {
+  {
 
     if (url.pathname === '/__form') {
       if (req.method !== 'POST') return Response.redirect(url.origin + '/', 303);
@@ -66,9 +86,42 @@ export default {
     }
     // The owner's plan must include publishing (034). Not live: "not available" (the site is kept, not deleted).
     if (!(await siteLive(env, slug))) return offline();
-    return new Response(req.method === 'HEAD' ? null : html, { headers: SITE_HEADERS });
-  },
-};
+    // At its own address, the page's own links (canonical, link preview, Google data) use that address.
+    const body = own ? html.split(`https://${slug}.${ROOT}`).join(`https://${own}`) : html;
+    return new Response(req.method === 'HEAD' ? null : body, { headers: SITE_HEADERS });
+  }
+}
+
+// ---------- own web addresses (038) ----------
+// Which site an address shows, and which address a site uses: asked of the database, cached 5 minutes like siteLive.
+// When the add-on or the plan ends, the database stops answering for that address, so it stops showing the site.
+async function cachedText(key, load) {
+  const req = new Request(`https://live.sogilex.internal/${key}`);
+  let cache = null;
+  try { cache = caches.default; const hit = await cache.match(req); if (hit) return await hit.text(); } catch { /* no cache here */ }
+  const value = await load();
+  if (value === undefined) return '';   // couldn't ask: don't remember it
+  try { if (cache) await cache.put(req, new Response(value, { headers: { 'Cache-Control': `max-age=${LIVE_TTL}` } })); } catch { /* fine */ }
+  return value;
+}
+const ask = (env, fn, args) => rpc(env, fn, args).then((v) => (typeof v === 'string' ? v : ''), () => undefined);
+async function domainSite(env, host) {
+  if (!/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host) || host.length > 253) return null;
+  const slug = await cachedText('host/' + host, () => ask(env, 'domain_site', { p_host: host }));
+  return /^[a-z0-9-]{3,32}$/.test(slug) ? slug : null;
+}
+async function siteDomain(env, slug) {
+  const d = await cachedText('own/' + slug, () => ask(env, 'site_domain', { p_slug: slug }));
+  return d && !d.endsWith('.' + ROOT) ? d : null;
+}
+function notConnected(host) {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Not connected yet</title></head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#120A18;color:#F7EFF3;font:17px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif;padding:24px;box-sizing:border-box">
+<main style="max-width:30rem"><p style="margin:0 0 10px;font:13px ui-monospace,monospace;letter-spacing:.18em;color:#BBA9C2">SOGILEX</p><h1 style="font-size:28px;margin:0 0 12px">${esc(host)} isn't connected yet.</h1>
+<p style="margin:0 0 20px;color:#BBA9C2">If it's yours, finish connecting it in Sogilex Build: it can take a few minutes after you add the record.</p>
+<p><a href="https://build.sogilex.com/" style="color:#FF9A4D">Open Sogilex Build →</a></p></main></body></html>`;
+  return new Response(html, { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': SITE_HEADERS['Content-Security-Policy'], 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=60' } });
+}
 
 // ---------- is this site live? (034) ----------
 // A published site is shown only while its owner's plan includes publishing (site_live in the database). When a plan

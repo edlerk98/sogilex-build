@@ -8,6 +8,8 @@
 //        reads that checkout from Stripe and switches the plan on at once (the webhook does the same, maybe later)
 //   { action: "portal" }                                                 -> { url }  Stripe's page to change card,
 //        switch between Basics and Do it yourself, see receipts or cancel
+//   { action: "domain_addon", on: true|false }                           -> { addon }  the $5/month ($50/year) "own web
+//        address" add-on (038), added to or removed from their Do it yourself subscription; charged straight away (prorated)
 // Stripe's webhook (POST with a Stripe-Signature header): the event's id is fetched again from Stripe with the secret
 //   key, so only real events count (no webhook signing secret to keep), and the subscription is then read as it is now,
 //   so an old or replayed event can't undo a later change. Subscription events set public.subscriptions.
@@ -50,10 +52,10 @@ function form(obj: Record<string, unknown>, prefix = "", out: URLSearchParams = 
   }
   return out;
 }
-async function stripe(method: "GET" | "POST", path: string, params?: Record<string, unknown>): Promise<Any> {
+async function stripe(method: "GET" | "POST" | "DELETE", path: string, params?: Record<string, unknown>): Promise<Any> {
   const key = (Deno.env.get("STRIPE_SECRET_KEY") ?? "").trim();
   if (!key) throw Object.assign(new Error("Payments aren't set up yet."), { status: 503 });
-  const qs = method === "GET" && params ? "?" + form(params).toString() : "";
+  const qs = method !== "POST" && params ? "?" + form(params).toString() : "";
   const res = await fetch(`https://api.stripe.com/v1/${path}${qs}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
@@ -92,9 +94,12 @@ const iso = (sec: unknown) => (typeof sec === "number" && sec > 0 ? new Date(sec
 async function syncSubscription(sub: Any): Promise<string | null> {
   const userId = String(sub?.metadata?.user_id ?? "");
   if (!/^[0-9a-f-]{36}$/.test(userId)) { console.error("subscription without a Sogilex user", sub?.id); return null; }
-  const item = sub?.items?.data?.[0];
+  // The plan is the item with a plan price; an "own web address" add-on (domain_month/_year) may sit beside it.
+  const items: Any[] = sub?.items?.data ?? [];
+  const item = items.find((i: Any) => /^(basics|diy)_(month|year)$/.test(String(i?.price?.lookup_key ?? ""))) ?? items[0];
   const lookup = String(item?.price?.lookup_key ?? "");
   const m = lookup.match(/^(basics|diy)_(month|year)$/);
+  const domainAddon = items.some((i: Any) => /^domain_(month|year)$/.test(String(i?.price?.lookup_key ?? "")));
   if (!m) { console.error("subscription with an unknown price", sub?.id, lookup); return null; }
   const status = STATUS[String(sub.status)];
   if (status === undefined || status === null) return null;
@@ -111,6 +116,7 @@ async function syncSubscription(sub: Any): Promise<string | null> {
     current_period_end: iso(item?.current_period_end ?? sub.current_period_end),
     stripe_customer_id: typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
     stripe_subscription_id: sub.id,
+    domain_addon: status !== "canceled" && domainAddon,
     // Cancelled in Manage billing: the plan stays on until this date, then Stripe ends it (036). Null if they keep it.
     cancel_at: status === "canceled" ? null : iso(sub.cancel_at) ?? (sub.cancel_at_period_end ? iso(item?.current_period_end ?? sub.current_period_end) : null),
     requested_plan_id: null, requested_billing: null, requested_at: null,
@@ -196,6 +202,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (session.status !== "complete" || !session.subscription) return json({ plan: null, pending: true }, 200, cors);
       const plan = await syncSubscription(await stripe("GET", `subscriptions/${session.subscription}`));
       return json({ plan, pending: !plan }, 200, cors);
+    }
+
+    if (body?.action === "domain_addon") {
+      if (!row?.stripe_subscription_id || !["active", "trialing", "past_due"].includes(row.status)) return json({ error: "Choose Do it yourself first, then add your own web address." }, 400, cors);
+      if (row.plan_id !== "diy") return json({ error: "Your own web address is an add-on to Do it yourself." }, 400, cors);
+      const sub = await stripe("GET", `subscriptions/${row.stripe_subscription_id}`);
+      const items: Any[] = sub?.items?.data ?? [];
+      const planItem = items.find((i: Any) => /^diy_(month|year)$/.test(String(i?.price?.lookup_key ?? "")));
+      const interval = planItem?.price?.recurring?.interval === "year" ? "year" : "month";
+      const addon = items.find((i: Any) => /^domain_(month|year)$/.test(String(i?.price?.lookup_key ?? "")));
+      if (body.on && !addon) {
+        const prices = await stripe("GET", "prices", { "lookup_keys[]": `domain_${interval}`, active: "true" });
+        if (!prices?.data?.[0]) return json({ error: "The add-on isn't available right now." }, 503, cors);
+        await stripe("POST", "subscription_items", { subscription: sub.id, price: prices.data[0].id, quantity: 1, proration_behavior: "always_invoice" });
+      } else if (!body.on && addon) {
+        await stripe("DELETE", `subscription_items/${addon.id}`, { proration_behavior: "create_prorations" });
+      }
+      await syncSubscription(await stripe("GET", `subscriptions/${sub.id}`));
+      return json({ addon: !!body.on }, 200, cors);
     }
 
     if (body?.action === "portal") {
