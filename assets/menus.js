@@ -9,7 +9,11 @@
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
-  if (window.SogilexUpgrade) SogilexUpgrade.init(db);
+  if (window.SogilexUpgrade) {
+    SogilexUpgrade.init(db);
+    SogilexUpgrade.ready().then(() => { if (TRIAL() && $('sheets') && $('sheets').firstChild) renderPreview(); });
+  }
+  const TRIAL = () => !!(window.SogilexUpgrade && window.SogilexUpgrade.isTrial()); // free trial: downloads carry the Sogilex line
   const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
@@ -733,6 +737,8 @@
             (f.hours || '').trim() ? h('p', { text: f.hours.trim() }) : null,
             contact ? h('p', { text: contact }) : null)));
       }
+      // Free trial: the Sogilex line in the bottom margin of the last page (a pill, readable on any colour).
+      if (i === n - 1 && TRIAL()) page.append(h('p', { class: 'm-mark', text: SogilexUpgrade.MARK }));
       pages.push({ page, body });
     }
     return { pages, units };

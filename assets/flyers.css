@@ -130,6 +130,8 @@
 .is-quote .f-head { font-style: italic; text-transform: none; letter-spacing: 0; line-height: 1.2; text-wrap: pretty; }
 .is-quote.font-heavy .f-head, .is-quote.font-slab .f-head, .is-quote.font-western .f-head { font-style: normal; }
 .is-quote .f-sub { color: var(--f-accent); font-weight: 600; font-size: 1.05em; }
+/* Free trial only: the Sogilex line under everything (paid plans don't have it). */
+.f-mark { flex: none; margin: calc(10pt * var(--s)) 0 0; text-align: center; font: 500 9pt/1.3 Inter, system-ui, sans-serif; letter-spacing: .02em; color: var(--f-ink); opacity: .62; }
 /* ===== end flyer page ===== */
 
 @media print {

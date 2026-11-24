@@ -143,3 +143,6 @@
 }
 .inv-badnum { margin: 0; font-size: 13px; color: var(--warn); }
 .inv-badnum[hidden] { display: none; }
+
+/* Free trial only: the Sogilex line at the foot of the page. */
+.inv-mark { margin: auto 0 0; padding-top: 10pt; text-align: center; font-size: 8.5pt; color: var(--i-muted); }
