@@ -183,6 +183,8 @@
             <option value="tall">Tall (2:3)</option>
             <option value="contain">Whole photo inside the frame</option>
           </select>
+          <label class="adjust-shape-l" for="adjust-zoom">Zoom</label>
+          <span class="adjust-zoom-w"><input type="range" class="adjust-zoom" id="adjust-zoom" min="100" max="300" step="5" value="100" disabled aria-describedby="adjust-zoom-v"><output id="adjust-zoom-v" class="adjust-zoom-v" for="adjust-zoom">100%</output></span>
           <button class="ghost" type="button" id="adjust-reset" disabled>Reset this photo</button>
           <span class="adjust-actions"><button class="ghost" type="button" id="adjust-cancel">Cancel</button><button class="btn" type="button" id="adjust-save">Save photo changes</button></span>
         </div>

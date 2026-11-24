@@ -745,7 +745,7 @@
 
   // ----- Adjust photos -----
   // Click a photo, choose its frame shape (the site's design often puts every photo in the same wide frame, which cuts
-  // off portraits), and drag to choose what part shows. Three kinds of photo:
+  // off portraits), zoom in to crop it tighter, and drag to choose what part shows. Three kinds of photo:
   //   flow: its own size sets its frame (most gallery photos): the shape goes on the photo, capped at 80% of the screen
   //         height and centred, so a tall photo never becomes a tower;
   //   box:  it fills a box the design sized (e.g. an about photo): the shape goes on that box;
@@ -788,7 +788,24 @@
       im.style.objectFit = 'cover';
     }
     if (c.pos) im.style.objectPosition = c.pos;
+    applyZoom(im, c);
   }
+  // Zoom (crop tighter): the photo is enlarged around its focus point (the same point dragging sets) and clipped back
+  // to its own frame, so the layout around it doesn't move. Works the same for every kind of photo, in every browser.
+  // A page animation on the photo (e.g. a slow zoom on the hero) would override the enlargement, so it's switched off.
+  function applyZoom(im, c) {
+    const z = c && c.zoom > 1 ? Math.min(3, c.zoom) : 1;
+    if (z === 1) {
+      // Back to how the page had it (its own inline values, if any).
+      const orig = im.ownerDocument.createElement('i'); orig.setAttribute('style', im.dataset.sxStyle || '');
+      ['transform', 'transform-origin', 'clip-path', 'animation'].forEach((p) => { const v = orig.style.getPropertyValue(p); if (v) im.style.setProperty(p, v); else im.style.removeProperty(p); });
+      return;
+    }
+    const [x, y] = (c.pos || '50% 50%').split(' ').map((v) => clampPct(parseFloat(v)));
+    const k = 1 - 1 / z; const f = (v) => (v * k).toFixed(2) + '%';
+    Object.assign(im.style, { transform: `scale(${z})`, transformOrigin: `${x}% ${y}%`, clipPath: `inset(${f(y)} ${f(100 - x)} ${f(100 - y)} ${f(x)})`, animation: 'none' });
+  }
+  const zoomOf = (im) => ((adj.changes[idx(im)] || {}).zoom || 1);
   function applyChanges(src, changes) {
     const d = new DOMParser().parseFromString(src, 'text/html');
     photoImgs(d).forEach((im, i) => applyPhoto(im, changes[i]));
@@ -801,6 +818,8 @@
   }
   // The photo's current position as percentages (the browser may report pixels or keywords).
   function currentPos(im, win) {
+    const saved = (adj.changes[idx(im)] || {}).pos;
+    if (saved) return saved.split(' ').map((v) => clampPct(parseFloat(v)));
     const parts = win.getComputedStyle(im).objectPosition.split(' ');
     const ov = overflow(im, win);
     const one = (v, o) => {
@@ -820,7 +839,10 @@
     const bw = im.clientWidth; const bh = im.clientHeight;
     const sc = Math.max(bw / im.naturalWidth, bh / im.naturalHeight);
     const x = im.naturalWidth * sc - bw; const y = im.naturalHeight * sc - bh;
-    return { x, y, movable: x > 1 || y > 1 };
+    // Zoomed in, dragging also moves the focus point the photo is enlarged around.
+    const z = im.hasAttribute('data-sxi') ? zoomOf(im) : 1;
+    const zx = x + (z - 1) * bw; const zy = y + (z - 1) * bh;
+    return { x: zx, y: zy, movable: zx > 1 || zy > 1 };
   }
   const idx = (im) => Number(im.getAttribute('data-sxi'));
   function restorePhoto(im) {
@@ -834,9 +856,10 @@
     const kind = adj.kinds[idx(im)];
     const ov = overflow(im, win);
     if (c.shape === 'contain') { setAdjMsg(kind === 'fill' ? 'Showing the whole photo, with space around it.' : 'Showing the whole photo inside its frame, with space around it. "Photo\'s own shape" usually looks better.'); return; }
-    if (kind === 'fill') { setAdjMsg('This photo is the background of a section, so the section is its frame. Drag it to choose what shows (or use the arrow keys), then save.'); return; }
-    setAdjMsg(ov.movable ? 'Drag the photo to choose what shows (or use the arrow keys). If too much is cut off, change the frame shape. Then save.'
-      : 'The whole photo shows in this frame. Pick another frame shape if you like, then save.');
+    if (kind === 'fill' && zoomOf(im) === 1) { setAdjMsg('This photo is the background of a section, so the section is its frame. Drag it to choose what shows (or use the arrow keys), or Zoom to crop it tighter. Then save.'); return; }
+    if (zoomOf(im) > 1) { setAdjMsg('Zoomed in. Drag the photo (or use the arrow keys) to choose what shows, then save.'); return; }
+    setAdjMsg(ov.movable ? 'Drag the photo to choose what shows (or use the arrow keys). Use Zoom to crop it tighter, or change the frame shape if too much is cut off. Then save.'
+      : 'The whole photo shows in this frame. Use Zoom to crop it tighter, or pick another frame shape. Then save.');
   }
   function selectPhoto(im) {
     const doc = $('frame').contentDocument;
@@ -847,6 +870,7 @@
     sel.disabled = false; $('adjust-reset').disabled = false;
     [...sel.options].forEach((o) => { o.disabled = kind === 'fill' && !['design', 'contain'].includes(o.value); });
     sel.value = (adj.changes[idx(im)] || {}).shape || 'design';
+    syncZoom(im);
     photoMsg(im);
   }
   function setChange(im, patch) {
@@ -862,6 +886,28 @@
     const [x, y] = currentPos(im, win);
     im.style.objectPosition = `${clampPct(x + dx).toFixed(1)}% ${clampPct(y + dy).toFixed(1)}%`;
     setChange(im, { pos: im.style.objectPosition });
+    applyZoom(im, adj.changes[idx(im)]);
+  }
+  function syncZoom(im) {
+    const zs = $('adjust-zoom'); const c = (im && adj.changes[idx(im)]) || {};
+    zs.disabled = !im || c.shape === 'contain';
+    zs.value = String(Math.round((c.zoom || 1) * 100));
+    $('adjust-zoom-v').textContent = zs.value + '%';
+  }
+  function zoomTo(im, pct) {
+    const z = Math.max(1, Math.min(3, pct / 100));
+    const i = idx(im);
+    if (z === 1 && adj.changes[i]) { delete adj.changes[i].zoom; const c = adj.changes[i]; if ((!c.shape || c.shape === 'design') && !c.pos) delete adj.changes[i]; }
+    else setChange(im, { zoom: z, pos: (adj.changes[i] || {}).pos || currentPosPct(im) });
+    applyZoom(im, adj.changes[i]);
+    syncZoom(im);
+    $('adjust-save').disabled = !Object.keys(adj.changes).length;
+    photoMsg(im);
+  }
+  // Where the photo is focused now, as "x% y%" (its saved position, else what the page shows).
+  function currentPosPct(im) {
+    const [x, y] = currentPos(im, $('frame').contentDocument.defaultView);
+    return `${x.toFixed(1)}% ${y.toFixed(1)}%`;
   }
   function wireFrame() {
     const doc = $('frame').contentDocument; if (!doc) return;
@@ -869,7 +915,9 @@
     const st = doc.createElement('style');
     st.textContent = CALM + 'img[data-sxi]{cursor:grab;touch-action:none;user-select:none}'
       + 'img[data-sxi]:hover{outline:2px dashed rgba(255,154,77,.95);outline-offset:-2px}'
-      + 'img[data-sxi].sx-sel{outline:3px solid #F2496B;outline-offset:-3px}img[data-sxi].sx-drag{cursor:grabbing}';
+      + 'img[data-sxi].sx-sel{outline:3px solid #F2496B;outline-offset:-3px}img[data-sxi].sx-drag{cursor:grabbing}'
+      // A zoomed photo is clipped to its frame, which would hide its outline: mark its frame instead.
+      + ':has(> img[data-sxi].sx-sel[style*="clip-path"]){outline:3px solid #F2496B;outline-offset:-3px}';
     doc.head.append(st);
     // Links and forms don't work while adjusting (clicks choose photos).
     doc.addEventListener('click', (e) => { if (e.target.closest('a, button, form')) e.preventDefault(); }, true);
@@ -897,6 +945,7 @@
           const nx = ov.x > 1 ? clampPct(sx - ((ev.clientX - x0) / ov.x) * 100) : sx;
           const ny = ov.y > 1 ? clampPct(sy - ((ev.clientY - y0) / ov.y) * 100) : sy;
           im.style.objectPosition = `${nx.toFixed(1)}% ${ny.toFixed(1)}%`; moved = true;
+          if (zoomOf(im) > 1) applyZoom(im, { zoom: zoomOf(im), pos: im.style.objectPosition });
         };
         const up = () => { im.removeEventListener('pointermove', move); im.removeEventListener('pointerup', up); im.removeEventListener('pointercancel', up); im.classList.remove('sx-drag'); if (moved) setChange(im, { pos: im.style.objectPosition }); };
         im.addEventListener('pointermove', move); im.addEventListener('pointerup', up); im.addEventListener('pointercancel', up);
@@ -907,7 +956,7 @@
   function startAdjust() {
     if (!html || building || editing || !lastBuildId || handOn()) return;
     adj.on = true; adj.changes = {}; adj.kinds = {}; adj.sel = null; adj.base = html;
-    $('adjust-bar').hidden = false; $('adjust-save').disabled = true; $('adjust-shape').disabled = true; $('adjust-reset').disabled = true;
+    $('adjust-bar').hidden = false; $('adjust-save').disabled = true; $('adjust-shape').disabled = true; $('adjust-reset').disabled = true; syncZoom(null);
     const f = handStart('adjust');
     f.onload = wireFrame;
     f.srcdoc = withLogo(taggedHtml(html));
@@ -931,8 +980,10 @@
     const im = adj.sel; if (!im) return;
     restorePhoto(im);
     const keepPos = e.target.value === 'contain' ? null : (adj.changes[idx(im)] || {}).pos || null;
-    setChange(im, { shape: e.target.value, pos: keepPos, ratio: null });
-    if (e.target.value === 'design' && !keepPos) delete adj.changes[idx(im)];
+    const keepZoom = e.target.value === 'contain' ? null : (adj.changes[idx(im)] || {}).zoom || null;
+    setChange(im, { shape: e.target.value, pos: keepPos, ratio: null, zoom: keepZoom });
+    if (e.target.value === 'design' && !keepPos && !keepZoom) delete adj.changes[idx(im)];
+    syncZoom(im);
     applyPhoto(im, adj.changes[idx(im)]);
     $('adjust-save').disabled = !Object.keys(adj.changes).length;
     photoMsg(im);
@@ -945,6 +996,7 @@
     $('adjust-save').disabled = !Object.keys(adj.changes).length;
     selectPhoto(im);
   });
+  $('adjust-zoom').addEventListener('input', (e) => { if (adj.sel) zoomTo(adj.sel, Number(e.target.value)); });
   document.addEventListener('keydown', (e) => {
     if (!adj.on || !adj.sel || !/^Arrow/.test(e.key) || /input|textarea|select/i.test((document.activeElement || {}).tagName || '')) return;
     e.preventDefault();
