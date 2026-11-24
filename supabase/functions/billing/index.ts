@@ -111,6 +111,8 @@ async function syncSubscription(sub: Any): Promise<string | null> {
     current_period_end: iso(item?.current_period_end ?? sub.current_period_end),
     stripe_customer_id: typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
     stripe_subscription_id: sub.id,
+    // Cancelled in Manage billing: the plan stays on until this date, then Stripe ends it (036). Null if they keep it.
+    cancel_at: status === "canceled" ? null : iso(sub.cancel_at) ?? (sub.cancel_at_period_end ? iso(item?.current_period_end ?? sub.current_period_end) : null),
     requested_plan_id: null, requested_billing: null, requested_at: null,
     updated_at: new Date().toISOString(),
   };
