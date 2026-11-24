@@ -7,6 +7,9 @@
 //   SogilexUpgrade.trialBar(kind)      on the free trial, a line above the tool: "Free trial: 0 of 1 flyer used · See
 //                                      plans". kind: 'builds' | 'flyers' | 'posts' | 'docs' | 'menu'.
 //   SogilexUpgrade.refresh()           re-reads your plan (after saving something that counts).
+//   SogilexUpgrade.isTrial()           true on the free trial (once the plan has loaded); ready() resolves when it has.
+//   SogilexUpgrade.MARK                the line free-trial downloads carry (Flyers, Posts, Menus, Invoices): any paid
+//                                      plan drops it. It's in the preview too, so what you see is what you get.
 //
 // The limits themselves are enforced by the database (021 plans); this only explains them and shows the way up.
 // Prices and plan names come from the plans table, so a price change needs no change here.
@@ -122,5 +125,7 @@ window.SogilexUpgrade = (() => {
       bar.hidden = false;
     }
   }
-  return { init, offer, trialBar, refresh };
+  const isTrial = () => !!(mine && mine.plan && mine.plan.limits && mine.plan.limits.window === 'ever');
+  const ready = () => load();
+  return { init, offer, trialBar, refresh, isTrial, ready, MARK: 'Made with Sogilex · sogilex.com' };
 })();

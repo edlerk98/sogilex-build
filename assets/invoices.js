@@ -10,7 +10,11 @@
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
-  if (window.SogilexUpgrade) { SogilexUpgrade.init(db); SogilexUpgrade.trialBar('docs'); }
+  if (window.SogilexUpgrade) {
+    SogilexUpgrade.init(db); SogilexUpgrade.trialBar('docs');
+    SogilexUpgrade.ready().then(() => { if (TRIAL() && cur) renderPreview(); });
+  }
+  const TRIAL = () => !!(window.SogilexUpgrade && window.SogilexUpgrade.isTrial()); // free trial: downloads carry the Sogilex line
   const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
@@ -669,6 +673,7 @@
           h('div', {}, h('i'), h('span', { text: 'Name' })),
           h('div', {}, h('i'), h('span', { text: 'Signature' })),
           h('div', { class: 'inv-sign-date' }, h('i'), h('span', { text: 'Date' })))) : null);
+    if (TRIAL()) page.append(h('p', { class: 'inv-mark', text: SogilexUpgrade.MARK })); // free trial only
     return page;
   }
   function scalePreview() {

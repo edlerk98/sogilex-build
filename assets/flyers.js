@@ -16,7 +16,12 @@
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
 
   const POSTS = document.body.dataset.tool === 'posts';
-  if (window.SogilexUpgrade) { SogilexUpgrade.init(db); SogilexUpgrade.trialBar(POSTS ? 'posts' : 'flyers'); }
+  if (window.SogilexUpgrade) {
+    SogilexUpgrade.init(db); SogilexUpgrade.trialBar(POSTS ? 'posts' : 'flyers');
+    SogilexUpgrade.ready().then(() => { if (TRIAL() && $('sheets') && $('sheets').firstChild) renderPreview(); });
+  }
+  const TRIAL = () => !!(window.SogilexUpgrade && window.SogilexUpgrade.isTrial()); // free trial: downloads carry the Sogilex line
+
   const TABLE = POSTS ? 'posts' : 'flyers';
   const NOUN = POSTS ? 'post' : 'flyer';
   const MAX_DETAILS = 5;
@@ -493,6 +498,7 @@
     mid.append(...[offer, info, details, cta].filter(Boolean));
     inner.append(mid);
     if (foot) inner.append(foot);
+    if (TRIAL()) inner.append(h('p', { class: 'f-mark', text: SogilexUpgrade.MARK }));
     page.append(inner);
     return page;
   }
