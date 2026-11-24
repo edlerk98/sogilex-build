@@ -363,6 +363,10 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .adjust-shape-l { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
 .adjust-shape { width: auto; min-height: 44px; padding: 8px 10px; flex: 0 1 260px; }
 .adjust-shape:disabled { opacity: .5; }
+.adjust-zoom-w { display: inline-flex; align-items: center; gap: 8px; flex: 0 1 220px; min-height: 44px; }
+.adjust-zoom { flex: 1; min-width: 110px; accent-color: #F2496B; height: 28px; }
+.adjust-zoom:disabled { opacity: .5; }
+.adjust-zoom-v { font-family: var(--mono); font-size: 13px; color: var(--mute); min-width: 4ch; text-align: right; }
 .ph-row { margin: 0; }
 .ph-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
 .ph-fields[hidden] { display: none; }
