@@ -54,11 +54,12 @@
   const LAYOUTS = [['poster', 'Poster'], ['block', 'Colour block'], ['left', 'Left-aligned']];
   const SIZES = POSTS ? ['square', 'story'] : ['letter', 'a4', 'square'];
   // Starters: a kind of flyer. They set a look and the example text in the empty boxes, never words on the flyer.
-  // Optional: `labels` renames boxes for that kind, `hide` leaves boxes out (and off the image), `note` adds a rule.
+  // Optional: `labels` renames boxes for that kind, `hide` leaves boxes out (and off the image), `note` adds a rule,
+  // `dish` shows "Use a dish from my menu" (only kinds about a dish or a deal: an event or a review has no dish).
   const FLYER_STARTERS = {
     event: { label: 'Event', look: { font: 'modern', palette: 'harbor', layout: 'poster' },
       hint: { kicker: 'Every Thursday', headline: 'Trivia Night', sub: 'Teams of up to six. Prizes for the top three.', offer: '', when: 'Thursdays, 7–9pm', where: 'Your place, address', detail: 'Free to play', cta: 'Call to reserve a table' } },
-    special: { label: 'Special or deal', look: { font: 'bold', palette: 'charcoal', layout: 'block' },
+    special: { label: 'Special or deal', dish: true, look: { font: 'bold', palette: 'charcoal', layout: 'block' },
       hint: { kicker: 'Monday to Friday', headline: 'Happy Hour', sub: 'Half-price appetizers at the bar', offer: '$5 drafts', when: '3–6pm', where: '', detail: '$7 house wines', cta: 'Walk-ins welcome' } },
     music: { label: 'Live music', look: { font: 'bold', palette: 'midnight', layout: 'poster' },
       hint: { kicker: 'Live on the patio', headline: 'The band name', sub: 'Blues and soul covers', offer: '', when: 'Saturday, May 3 · 8pm', where: 'Address', detail: 'No cover', cta: 'Scan for the full line-up' } },
@@ -70,11 +71,11 @@
       hint: { kicker: 'Holiday hours', headline: 'Closed Thanksgiving Day', sub: 'Back to regular hours on Friday', offer: '', when: 'Thursday, November 26', where: '', detail: 'Order pies by Monday', cta: 'Thank you for a great year' } },
   };
   const POST_STARTERS = {
-    deal: { label: 'Deal or special', look: { font: 'heavy', palette: 'mustard', layout: 'block' },
+    deal: { label: 'Deal or special', dish: true, look: { font: 'heavy', palette: 'mustard', layout: 'block' },
       hint: { kicker: 'This week only', headline: 'Wing Night', sub: 'Any sauce, all night', offer: '$9.99', when: 'Tuesdays, 4pm–close', where: '', detail: 'Dine in only', cta: 'See you tonight' } },
     event: { label: 'Event', look: { font: 'modern', palette: 'harbor', layout: 'poster' },
       hint: { kicker: 'This Saturday', headline: 'Live Music', sub: 'Blues and soul covers', offer: '', when: 'Saturday · 8pm', where: 'On the patio', detail: 'No cover', cta: 'Bring a friend' } },
-    item: { label: 'Featured item', look: { font: 'heavy', palette: 'ketchup', layout: 'block' },
+    item: { label: 'Featured item', dish: true, look: { font: 'heavy', palette: 'ketchup', layout: 'block' },
       hint: { kicker: 'New on the menu', headline: 'Big Ben Burger', sub: '12 oz, cheddar, pickle and onion', offer: '$14', when: '', where: '', detail: 'Served with steak fries', cta: 'Available all week' },
       labels: { headline: 'Name of the dish or product', sub: 'Short description (optional)', offer: 'Price (optional)' }, hide: ['when', 'where'] },
     announce: { label: 'Announcement', look: { font: 'classic', palette: 'paper', layout: 'left' },
@@ -203,7 +204,7 @@
     return out.slice(0, 300);
   }
   function dishPicker() {
-    if (!menuDishes.length) return null;
+    if (!menuDishes.length || !STARTERS[flyer.starter].dish) return null;
     const groups = new Map();
     menuDishes.forEach((d, i) => { if (!groups.has(d.sec)) groups.set(d.sec, []); groups.get(d.sec).push([i, d]); });
     const sel = h('select', { class: 'mselect', id: 'f-dish', onchange: (e) => {

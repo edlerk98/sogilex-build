@@ -136,3 +136,5 @@
   #print-root .flyer { break-after: page; }
   #print-root .flyer:last-child { break-after: auto; }
 }
+/* "Use a dish from my menu": a list is as wide as its longest dish, so keep it inside the card, the size of the boxes below. */
+#f-dish { flex: 1 1 100%; width: 100%; min-width: 0; max-width: 100%; min-height: 44px; border-radius: 12px; padding: 0 12px; font-size: 15px; text-overflow: ellipsis; }
