@@ -46,6 +46,17 @@ with Sogilex sign-in).
   with the public key are refused, so the per-visitor limit can't be dodged. Emergency off switch: delete that row.
   New secret: set FORM_SECRET on the Worker, then store the new fingerprint.
 
+## Showing up on Google (2026-11-24, Worker + 028)
+- Every published page gets `<link rel="canonical">` to `https://name.sogilex.net/`; `/robots.txt` names
+  `/sitemap.xml`, which lists the site and `/menu` when they exist.
+- schema.org JSON-LD, built only from what the page shows: `WebSite` (name = page title before " | ", else the h1)
+  always; `LocalBusiness` too when the page has a real `tel:` link (10 digits get +1) or shows the saved business hours.
+  Hours come from `publish_site` (028 returns `hours`) and are used only if every opening/closing time appears in the
+  page text, so a site built before the hours changed never tells Google different hours. Anything with a
+  `[PLACEHOLDER]` is left out. JSON-LD is a data block, so the no-scripts CSP still holds; `<` `>` `&` are escaped.
+- Existing sites get the canonical and JSON-LD only when republished; robots/sitemap apply at once.
+- Tested in miniflare (21 checks, incl. stale hours left out, placeholder phone, a title containing `</script>`).
+
 ## Online menus
 `name.sogilex.net/menu` is built by the Worker from `public_menu(name)` (the owner's menu JSON, logo, logo colours),
 every piece of text escaped, served with the same CSP and footer; cached 60 s. Owners publish with `publish_menu`
