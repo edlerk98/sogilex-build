@@ -10,7 +10,7 @@
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
   if (window.SogilexUpgrade) {
-    SogilexUpgrade.init(db);
+    SogilexUpgrade.init(db); SogilexUpgrade.trialBar('menu');
     SogilexUpgrade.ready().then(() => { if (TRIAL() && $('sheets') && $('sheets').firstChild) renderPreview(); });
   }
   const TRIAL = () => !!(window.SogilexUpgrade && window.SogilexUpgrade.isTrial()); // free trial: downloads carry the Sogilex line
@@ -837,7 +837,11 @@
       const { error } = await db.from('menus').upsert({ user_id: uid, data: menu, updated_at: new Date().toISOString() }).abortSignal(AbortSignal.timeout(10000));
       if (error) throw error;
       $('save-state').textContent = 'Saved';
-    } catch { $('save-state').textContent = "Couldn't save. Check your connection."; return; }
+    } catch (e) {
+      const m = (e && e.message) || '';
+      if (/free trial has ended/i.test(m)) { $('save-state').textContent = 'Not saved: your free trial has ended.'; UP(m); return; }
+      $('save-state').textContent = "Couldn't save. Check your connection."; return;
+    }
     if (online.slug) publishOnline(); // keep the online menu in step
   }
   window.addEventListener('beforeunload', (e) => { if ($('save-state').textContent !== 'Saved' && uid && $('save-state').textContent) { save(); e.preventDefault(); } });
@@ -846,6 +850,7 @@
   $('paper').addEventListener('change', (e) => { menu.paper = e.target.value === 'a4' ? 'a4' : 'letter'; changed(); });
   $('pages').addEventListener('change', (e) => { menu.pages = e.target.value === '2' ? 2 : 1; changed(); });
   $('print').addEventListener('click', () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('export')) return;
     const n = uncheckedCount();
     if (n && !confirm(`${n} ${n === 1 ? 'price was' : 'prices were'} read from your photo and not checked yet (highlighted in the form). Print anyway?`)) return;
     // Print a copy of the preview, which has already been fitted to the page (a hidden copy can't measure itself).

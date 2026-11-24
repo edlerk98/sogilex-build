@@ -709,6 +709,7 @@
     return true;
   }
   $('print').addEventListener('click', () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('export')) return;
     if (!cur || unreadable()) return;
     renderPreview();
     $('print-root').replaceChildren(makePage());

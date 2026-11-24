@@ -607,6 +607,7 @@
   }
   const imageName = () => `${(flyer.headline.trim() || NOUN).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || NOUN}-${flyer.size}.png`;
   async function saveImage() {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('export')) return;
     const btn = $('saveimg');
     btn.disabled = true; const was = btn.textContent; btn.textContent = 'Making image…';
     try {
@@ -640,6 +641,7 @@
     }, 900);
   }
   async function share() {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('export')) return;
     const fit = $('fit');
     const caption = (flyer.caption || '').trim();
     const copied = caption && navigator.clipboard ? navigator.clipboard.writeText(caption).then(() => true, () => false) : Promise.resolve(false);
@@ -688,7 +690,7 @@
     try { await saving; $('save-state').textContent = 'Saved'; }
     catch (e) {
       const m = (e && e.message) || '';
-      const limit = / saved\. Delete|free trial includes|your plan/i.test(m);
+      const limit = / saved\. Delete|free trial includes|free trial has ended|your plan/i.test(m);
       $('save-state').textContent = limit ? m : "Couldn't save. Check your connection.";
       if (limit) UP(m);
     }
@@ -727,6 +729,7 @@
   // ---------- start ----------
   $('size').addEventListener('change', (e) => { flyer.size = SIZES.includes(e.target.value) ? e.target.value : SIZES[0]; changed(); });
   if ($('print')) $('print').addEventListener('click', () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('export')) return;
     renderPreview();
     $('print-root').replaceChildren($('sheets').firstChild.cloneNode(true));
     window.print();

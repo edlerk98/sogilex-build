@@ -8,6 +8,9 @@
 //                                      plans". kind: 'builds' | 'flyers' | 'posts' | 'docs' | 'menu'.
 //   SogilexUpgrade.refresh()           re-reads your plan (after saving something that counts).
 //   SogilexUpgrade.isTrial()           true on the free trial (once the plan has loaded); ready() resolves when it has.
+//   SogilexUpgrade.gate(kind)          before a download/print: 'export' (flyers, posts, menus, invoices) is refused once
+//                                      the free trial has ended; 'site' (download/copy/open a website) needs a plan with
+//                                      publishing (the trial is preview only). Refused = the upgrade box opens, returns false.
 //   SogilexUpgrade.MARK                the line free-trial downloads carry (Flyers, Posts, Menus, Invoices): any paid
 //                                      plan drops it. It's in the preview too, so what you see is what you get.
 //
@@ -17,7 +20,7 @@ window.SogilexUpgrade = (() => {
   let db = null; let plans = null; let mine = null; let loading = null;
   // The database's limit messages (plan_full, plan_item_cap, publish_site, publish_menu). Daily limits on Beta/Team
   // ("for today") aren't offers: nothing to buy.
-  const LIMIT = /The free trial includes|aren't part of the .* plan|for this month\. They reset|the most your plan allows|isn't included in your plan|aren't included in your plan/i;
+  const LIMIT = /free trial has ended|Downloading or copying your website|The free trial includes|aren't part of the .* plan|for this month\. They reset|the most your plan allows|isn't included in your plan|aren't included in your plan/i;
   // Things only plans with publishing and websites include, so Basics would not help.
   const NEEDS_SITE = /website|publish|online menu/i;
 
@@ -59,6 +62,8 @@ window.SogilexUpgrade = (() => {
     return list.filter((p) => (!cur || p.id !== cur.id) && (p.month_cents || 0) > curPrice && !(p.id === 'basics' && NEEDS_SITE.test(message)));
   }
   function title(message) {
+    if (/free trial has ended/i.test(message)) return 'Your free trial has ended';
+    if (/Downloading or copying your website/i.test(message)) return 'Download your site with Do it yourself';
     if (/free trial/i.test(message)) return "You've used the free trial for this";
     if (/aren't part of|isn't included|aren't included/i.test(message)) return 'Not included in your plan';
     if (/this month/i.test(message)) return "You've used this month's allowance";
@@ -73,9 +78,13 @@ window.SogilexUpgrade = (() => {
     document.body.append(dlg);
     return dlg;
   }
+  let lastMsg = ''; let lastAt = 0;
   function offer(message) {
     const msg = String(message || '');
     if (!LIMIT.test(msg)) return false;
+    // Autosave can hit the same limit on every keystroke: open the box once, then stay quiet for a minute.
+    if (msg === lastMsg && Date.now() - lastAt < 60000) return true;
+    lastMsg = msg; lastAt = Date.now();
     const opts = options(msg);
     if (plans && !opts.length) return false; // already on the top self-serve plan: the plain message says it all
     const d = box();
@@ -97,6 +106,7 @@ window.SogilexUpgrade = (() => {
 
   // ----- the free-trial line above a tool -----
   const KIND = {
+    menu: null, // Menus: days left only (one menu per account)
     builds: ['website', 'websites', (m) => [m.used.builds || 0, m.builds_allowed]],
     flyers: ['flyer', 'flyers', (m) => [m.used.flyers || 0, m.plan.limits.flyers]],
     posts: ['post', 'posts', (m) => [m.used.posts || 0, m.plan.limits.posts]],
@@ -105,7 +115,7 @@ window.SogilexUpgrade = (() => {
   const bars = [];
   function trialBar(kind) {
     const lede = document.querySelector('main .lede');
-    if (!lede || !KIND[kind]) return;
+    if (!lede || !(kind in KIND)) return;
     const bar = el('p', { class: 'up-bar', hidden: '' });
     lede.before(bar);
     bars.push([bar, kind]);
@@ -115,17 +125,35 @@ window.SogilexUpgrade = (() => {
     for (const [bar, kind] of bars) {
       const m = mine;
       if (!m || !m.plan || !m.plan.limits || m.plan.limits.window !== 'ever') { bar.hidden = true; continue; }
-      const [one, many, count] = KIND[kind];
-      const [used, allowed] = count(m);
-      bar.replaceChildren(
-        el('span', { class: 'up-tag', text: 'Free trial' }),
-        `${Math.min(used, allowed)} of ${allowed} ${allowed === 1 ? one : many} used. `,
-        el('a', { href: '/account/#sec-plan', text: used >= allowed ? 'Upgrade to make more' : 'See plans' }));
-      bar.classList.toggle('up-full', used >= allowed);
+      if (m.plan.id === 'expired') {
+        bar.replaceChildren(el('span', { class: 'up-tag', text: 'Trial ended' }), 'Your free trial has ended. Your work is saved: choose a plan to keep editing and downloading. ',
+          el('a', { href: '/account/#sec-plan', text: 'See plans' }));
+        bar.classList.add('up-full'); bar.hidden = false; continue;
+      }
+      const days = m.trial_ends ? Math.max(1, Math.ceil((new Date(m.trial_ends) - Date.now()) / 86400000)) : null;
+      const parts = [el('span', { class: 'up-tag', text: 'Free trial' }), days ? `${days} ${days === 1 ? 'day' : 'days'} left. ` : ''];
+      let full = false;
+      if (KIND[kind]) {
+        const [one, many, count] = KIND[kind];
+        const [used, allowed] = count(m);
+        full = used >= allowed;
+        parts.push(`${Math.min(used, allowed)} of ${allowed} ${allowed === 1 ? one : many} used. `);
+      }
+      parts.push(el('a', { href: '/account/#sec-plan', text: full ? 'Upgrade to make more' : 'See plans' }));
+      bar.replaceChildren(...parts);
+      bar.classList.toggle('up-full', full);
       bar.hidden = false;
     }
   }
+  const isExpired = () => !!(mine && mine.plan && mine.plan.id === 'expired');
+  // Unknown plan (still loading or offline): let it through; the database still enforces what matters.
+  function gate(kind) {
+    if (!mine) return true;
+    if (kind === 'site' && !mine.can_publish) return !offer('Downloading or copying your website comes with Do it yourself, along with publishing it at your-name.sogilex.net. On the free trial you can preview it here.');
+    if (isExpired()) return !offer('Your free trial has ended. Your work is saved: choose a plan to keep editing, downloading and printing.');
+    return true;
+  }
   const isTrial = () => !!(mine && mine.plan && mine.plan.limits && mine.plan.limits.window === 'ever');
   const ready = () => load();
-  return { init, offer, trialBar, refresh, isTrial, ready, MARK: 'Made with Sogilex · sogilex.com' };
+  return { init, offer, trialBar, refresh, isTrial, isExpired, gate, ready, MARK: 'Made with Sogilex · sogilex.com' };
 })();

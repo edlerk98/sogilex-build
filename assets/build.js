@@ -1331,6 +1331,7 @@
 
   // ---------- results ----------
   $('download').addEventListener('click', async () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('site')) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([await forFile(html)], { type: 'text/html' }));
     a.download = `${slug(siteName)}.html`;
@@ -1338,12 +1339,14 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
   $('copy').addEventListener('click', async () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('site')) return;
     try { await navigator.clipboard.writeText(await forFile(html)); $('copy').textContent = 'Copied'; }
     catch { $('copy').textContent = 'Copy failed'; }
     setTimeout(() => { $('copy').textContent = 'Copy code'; }, 1800);
   });
   // Full-size view in a new tab, still sandboxed: no scripts, no access to this site.
   $('newtab').addEventListener('click', () => {
+    if (window.SogilexUpgrade && !SogilexUpgrade.gate('site')) return;
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.title = `${slug(siteName)}.html · preview`;
