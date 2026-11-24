@@ -13,7 +13,19 @@
 (() => {
   const SUPABASE_URL = 'https://sdltqbctuieyjlujsdhj.supabase.co';
   const PUBLISHABLE_KEY = 'sb_publishable_SLyXLfw7hZQTL_xEpofo8g_XgKZZStM'; // public by design; RLS protects data
-  const PAYMENTS_ON = false; // flip once create-checkout and stripe-webhook are deployed
+  // Payments go through the `billing` Edge Function. While Stripe runs on a test key it only lets billing testers
+  // (app_settings 'billing_testers') through; anyone else gets "Payments aren't open yet", and their choice is saved
+  // as a request (request_plan_change) as before.
+  const PAYMENTS_ON = true;
+  const BILLING_URL = `${SUPABASE_URL}/functions/v1/billing`;
+  async function billingCall(body) {
+    const s = await session();
+    if (!s) throw new Error('Your sign-in has expired. Sign in again.');
+    const res = await within(fetch(BILLING_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}`, apikey: PUBLISHABLE_KEY }, body: JSON.stringify(body) }), 25000);
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(j.error || `That didn't work (${res.status}).`), { status: res.status });
+    return j;
+  }
   const $ = (id) => document.getElementById(id);
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
@@ -64,10 +76,13 @@
     if (!$('co-agree').checked) { st.className = 'status err'; st.textContent = 'Tick the box to agree to the Terms first.'; return; }
     const btn = $('co-pay'); btn.disabled = true; st.className = 'status'; st.textContent = PAYMENTS_ON ? 'Opening secure payment…' : 'Saving your choice…';
     try {
-      if (PAYMENTS_ON) {
-        const { data, error } = await db.functions.invoke('create-checkout', { body: { plan: plan.id, billing } });
-        if (error || !data || !data.url) throw error || new Error("Couldn't start the payment.");
-        location.href = data.url; return;
+      if (PAYMENTS_ON && !doneForYou(plan)) {
+        try {
+          const j = await billingCall({ action: 'checkout', plan: plan.id, billing });
+          if (j.url) { location.href = j.url; return; } // Stripe's own payment page
+        } catch (e) {
+          if (e.status !== 403) throw e; // 403: payments not open for this account yet: save the request instead
+        }
       }
       const { error } = await within(db.rpc('request_plan_change', { p_plan: plan.id, p_billing: billing }), 12000);
       if (error) throw error;
@@ -76,6 +91,18 @@
       btn.disabled = false; st.className = 'status err';
       st.textContent = (e && e.message && !/fetch|network|timeout/i.test(e.message)) ? e.message : "Couldn't save it. Check your connection and try again.";
     }
+  }
+  // Back from Stripe: switch the plan on now (Stripe also tells Sogilex on its own, sometimes a little later).
+  async function confirmPaid() {
+    const sid = params.get('session_id') || '';
+    $('checkout').hidden = true; $('co-h').hidden = true; $('done').hidden = false;
+    $('done-h').textContent = 'Confirming your payment…'; $('done-text').textContent = 'This takes a few seconds.';
+    for (let i = 0; i < 6; i++) {
+      try { const j = await billingCall({ action: 'confirm', session_id: sid }); if (j.plan) { showDone(true); return; } } catch { /* try again */ }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    $('done-h').textContent = 'Thank you. Your payment is being confirmed.';
+    $('done-text').textContent = 'Your plan switches on within a few minutes. A receipt is on its way to your email. If it hasn\'t switched on in an hour, email hello@sogilex.com.';
   }
   function showDone(paid) {
     $('checkout').hidden = true; $('co-h').hidden = true; $('done').hidden = false;
@@ -110,7 +137,7 @@
       return;
     }
     if (billing === 'year' && !plan.year_cents) billing = 'month';
-    if (params.get('status') === 'success') { showDone(true); return; }
+    if (params.get('status') === 'success') { confirmPaid(); return; }
     $('checkout').hidden = false;
     render();
   })();
