@@ -53,7 +53,14 @@
     try {
       const { data, error } = await db.rpc('build_quota').abortSignal(AbortSignal.timeout(8000));
       if (error) throw error;
-      const w = leftWhen(await getPlan());
+      const plan = await getPlan();
+      // A plan without websites (Basics): say so up front, with the way to get them.
+      if (plan && plan.builds_allowed === 0) {
+        const q = $('quota'); q.textContent = `Websites aren't part of ${(plan.plan && plan.plan.name) || 'your plan'}. `;
+        const a = document.createElement('a'); a.href = '../account/'; a.textContent = 'See plans'; q.append(a);
+        q.classList.add('out'); return 0;
+      }
+      const w = leftWhen(plan);
       $('quota').textContent = data > 0 ? `${data} ${data === 1 ? 'build' : 'builds'} left ${w}` : `No builds left ${w}`;
       $('quota').classList.toggle('out', data <= 0);
       return data;
