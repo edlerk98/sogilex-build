@@ -10,6 +10,8 @@
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
+  if (window.SogilexUpgrade) { SogilexUpgrade.init(db); SogilexUpgrade.trialBar('docs'); }
+  const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
   const COLS = 'id, kind, status, number, customer_id, source_id, data, issue_date, due_date, subtotal_cents, tax_cents, total_cents, sent_at, paid_on, updated_at';
@@ -150,7 +152,9 @@
   }
   const friendly = (e) => {
     const m = (e && e.message) || '';
-    return /fetch|network|timeout|abort/i.test(m) || !m ? "Couldn't save. Check your connection." : m;
+    if (/fetch|network|timeout|abort/i.test(m) || !m) return "Couldn't save. Check your connection.";
+    UP(m);
+    return m;
   };
   async function save() {
     if (!uid || !cur || !editable()) return false;

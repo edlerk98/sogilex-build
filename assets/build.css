@@ -373,3 +373,23 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 140px; }
 .ph-label { font: 600 13px var(--mono); color: var(--lime); padding: 6px 10px; border: 1px solid var(--ctl); border-radius: 8px; }
 .ph-input { flex: 1 1 200px; width: auto; min-height: 44px; }
 .adjust-actions { margin-left: auto; display: inline-flex; gap: 8px; }
+
+/* ---------- upgrade prompts (assets/upgrade.js), every tool ---------- */
+.up-dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; border-radius: 20px; border: 1px solid var(--ctl); background: #1A0F22; color: var(--text); box-shadow: 0 30px 80px rgba(0, 0, 0, .6); }
+.up-dlg::backdrop { background: rgba(10, 5, 14, .72); }
+.up-dlg h2 { margin: 0 0 8px; font: 600 21px/1.2 var(--display); }
+.up-msg { margin: 0 0 16px; color: var(--mute); }
+.up-plans { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0 0 16px; }
+.up-plan { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; border: 1px solid var(--ctl); background: #120A18; }
+.up-plan.up-best { border-color: #F2496B; }
+.up-plan p { margin: 0; color: var(--mute); font-size: 14px; flex: 1; }
+.up-plan-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.up-price { font-weight: 600; white-space: nowrap; }
+.up-plan .btn, .up-plan .up-choose { min-height: 44px; font-size: 15px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.up-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.up-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 14px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--ctl); background: #120A18; font-size: 14px; color: var(--mute); width: fit-content; max-width: 100%; }
+.up-bar[hidden] { display: none; }
+.up-bar a { color: #FF9A4D; }
+.up-bar.up-full { border-color: #F2496B; color: var(--text); }
+.up-tag { font: 12px var(--mono, monospace); letter-spacing: .12em; text-transform: uppercase; color: #FF9A4D; }
+.up-foot .linkbtn { background: none; border: 0; padding: 0; color: #FF9A4D; font: inherit; text-decoration: underline; cursor: pointer; }
