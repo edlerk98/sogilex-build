@@ -46,6 +46,13 @@ with Sogilex sign-in).
   with the public key are refused, so the per-visitor limit can't be dodged. Emergency off switch: delete that row.
   New secret: set FORM_SECRET on the Worker, then store the new fingerprint.
 
+## When a plan ends (2026-11-24, 034)
+- A site (and its photos, logo and contact form) is shown only while the owner's plan includes publishing: the Worker
+  asks `site_live(slug)` (cached 5 minutes per site; if the database can't be reached, sites stay up). Otherwise a
+  503 "This site isn't available right now" page (noindex). The online menu follows the same rule inside `public_menu`.
+- Nothing is deleted: choosing a plan again brings the site back within minutes, with no republishing.
+- Past-due plans still count (Stripe retries the card first). Complimentary and Team always count.
+
 ## Online menus
 `name.sogilex.net/menu` is built by the Worker from `public_menu(name)` (the owner's menu JSON, logo, logo colours),
 every piece of text escaped, served with the same CSP and footer; cached 60 s. Owners publish with `publish_menu`

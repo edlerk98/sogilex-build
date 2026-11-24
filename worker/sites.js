@@ -44,15 +44,16 @@ export default {
 
     if (url.pathname === '/__form') {
       if (req.method !== 'POST') return Response.redirect(url.origin + '/', 303);
+      if (!(await siteLive(env, slug))) return page(503, 'Not available', "This site isn't taking messages right now.");
       return form(req, env, slug, url);
     }
-    if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveLogo(env, slug, req.method);
+    if (url.pathname === '/logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return (await siteLive(env, slug)) ? serveLogo(env, slug, req.method) : offline();
     if ((url.pathname === '/menu' || url.pathname === '/menu/') && (req.method === 'GET' || req.method === 'HEAD')) return serveMenu(env, slug, req.method);
     if (url.pathname === '/menu-logo.png' && (req.method === 'GET' || req.method === 'HEAD')) return serveMenuLogo(env, slug, req.method);
     const mphoto = url.pathname.match(/^\/menu-photos\/([0-9a-f-]{36})\.jpg$/);
     if (mphoto && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, mphoto[1], req.method, 'mphoto');
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
-    if (photo && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, photo[1], req.method);
+    if (photo && (req.method === 'GET' || req.method === 'HEAD')) return (await siteLive(env, slug)) ? servePhoto(env, slug, photo[1], req.method) : offline();
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
     if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
     if (url.pathname !== '/' && url.pathname !== '/index.html') return Response.redirect(url.origin + '/', 302);
@@ -62,9 +63,35 @@ export default {
       const m = await publicMenu(env, slug);
       return m ? Response.redirect(url.origin + '/menu', 302) : notFound();
     }
+    // The owner's plan must include publishing (034). Not live: "not available" (the site is kept, not deleted).
+    if (!(await siteLive(env, slug))) return offline();
     return new Response(req.method === 'HEAD' ? null : html, { headers: SITE_HEADERS });
   },
 };
+
+// ---------- is this site live? (034) ----------
+// A published site is shown only while its owner's plan includes publishing (site_live in the database). When a plan
+// ends, the site stays stored, so choosing a plan again brings it back with no republishing. The answer is cached for
+// 5 minutes per site, so a page view rarely waits for the database; if the database can't be reached, sites stay up.
+const LIVE_TTL = 300;
+async function siteLive(env, slug) {
+  const key = new Request(`https://live.sogilex.internal/${slug}`);
+  let cache = null;
+  try { cache = caches.default; const hit = await cache.match(key); if (hit) return (await hit.text()) === '1'; } catch { /* no cache here */ }
+  let live = true;
+  try { live = (await rpc(env, 'site_live', { p_slug: slug })) === true; } catch { live = true; }
+  try { if (cache) await cache.put(key, new Response(live ? '1' : '0', { headers: { 'Cache-Control': `max-age=${LIVE_TTL}` } })); } catch { /* fine */ }
+  return live;
+}
+function offline() {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Not available right now</title></head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#120A18;color:#F7EFF3;font:17px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif;padding:24px;box-sizing:border-box">
+<main style="max-width:30rem"><p style="margin:0 0 10px;font:13px ui-monospace,monospace;letter-spacing:.18em;color:#BBA9C2">SOGILEX</p><h1 style="font-size:28px;margin:0 0 12px">This site isn't available right now.</h1>
+<p style="margin:0 0 20px;color:#BBA9C2">If it's yours, sign in to Sogilex and choose a plan with publishing to bring it back.</p>
+<p><a href="https://build.sogilex.com/account/" style="color:#FF9A4D">Go to your Sogilex account →</a></p></main></body></html>`;
+  // 503 = temporary: search engines keep the page for a while, in case the plan comes back.
+  return new Response(html, { status: 503, headers: { ...SITE_HEADERS, 'Retry-After': '86400', 'Cache-Control': 'public, max-age=60' } });
+}
 
 // ---------- publish API (api.sogilex.net) ----------
 function cors(extra) {
