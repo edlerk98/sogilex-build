@@ -46,12 +46,25 @@ with Sogilex sign-in).
   with the public key are refused, so the per-visitor limit can't be dodged. Emergency off switch: delete that row.
   New secret: set FORM_SECRET on the Worker, then store the new fingerprint.
 
+<<<<<<< HEAD
+## Showing up on Google (2026-11-24, Worker + 028)
+- Every published page gets `<link rel="canonical">` to `https://name.sogilex.net/`; `/robots.txt` names
+  `/sitemap.xml`, which lists the site and `/menu` when they exist.
+- schema.org JSON-LD, built only from what the page shows: `WebSite` (name = page title before " | ", else the h1)
+  always; `LocalBusiness` too when the page has a real `tel:` link (10 digits get +1) or shows the saved business hours.
+  Hours come from `publish_site` (028 returns `hours`) and are used only if every opening/closing time appears in the
+  page text, so a site built before the hours changed never tells Google different hours. Anything with a
+  `[PLACEHOLDER]` is left out. JSON-LD is a data block, so the no-scripts CSP still holds; `<` `>` `&` are escaped.
+- Existing sites get the canonical and JSON-LD only when republished; robots/sitemap apply at once.
+- Tested in miniflare (21 checks, incl. stale hours left out, placeholder phone, a title containing `</script>`).
+=======
 ## When a plan ends (2026-11-24, 034)
 - A site (and its photos, logo and contact form) is shown only while the owner's plan includes publishing: the Worker
   asks `site_live(slug)` (cached 5 minutes per site; if the database can't be reached, sites stay up). Otherwise a
   503 "This site isn't available right now" page (noindex). The online menu follows the same rule inside `public_menu`.
 - Nothing is deleted: choosing a plan again brings the site back within minutes, with no republishing.
 - Past-due plans still count (Stripe retries the card first). Complimentary and Team always count.
+>>>>>>> 6033ad5 (When a plan ends, its site and online menu go offline (034 site_live + public_menu checks can_publish; Worker shows a 503 'not available right now' page for the site, photos, logo and contact form, cached 5 min, fails open). Nothing is deleted: a new plan brings it back without republishing)
 
 ## Online menus
 `name.sogilex.net/menu` is built by the Worker from `public_menu(name)` (the owner's menu JSON, logo, logo colours),

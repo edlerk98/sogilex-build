@@ -54,7 +54,8 @@ export default {
     if (mphoto && (req.method === 'GET' || req.method === 'HEAD')) return servePhoto(env, slug, mphoto[1], req.method, 'mphoto');
     const photo = url.pathname.match(/^\/photos\/([0-9a-f-]{36})\.jpg$/);
     if (photo && (req.method === 'GET' || req.method === 'HEAD')) return (await siteLive(env, slug)) ? servePhoto(env, slug, photo[1], req.method) : offline();
-    if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /\n', { headers: { 'Content-Type': 'text/plain' } });
+    if (url.pathname === '/robots.txt') return new Response(`User-agent: *\nAllow: /\nSitemap: ${url.origin}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' } });
+    if (url.pathname === '/sitemap.xml' && (req.method === 'GET' || req.method === 'HEAD')) return sitemap(env, slug, url, req.method);
     if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
     if (url.pathname !== '/' && url.pathname !== '/index.html') return Response.redirect(url.origin + '/', 302);
 
@@ -138,6 +139,8 @@ async function api(req, env, url) {
       const { html: withPhotos, kept, order, more } = await copyPhotos(env, token, result.slug, result.html, pick ? [pick] : []);
       const hasLogo = await copyLogo(env, result.slug, result.logo);
       const og = linkPreview(result.slug, result.preview, kept, order, hasLogo);
+      og.hours = result.hours || null; // business hours (028): used for Google's data only when the page shows them
+      og.logo = hasLogo;
       const html = await prepare(withPhotos, result.slug, hasLogo, og);
       await env.SITES.put('site:' + result.slug, html);
       return json({ slug: result.slug, url: `https://${result.slug}.${ROOT}/`, more: !!more });
@@ -463,6 +466,111 @@ function ogTags(og, title, desc) {
   ].filter(Boolean).join('');
 }
 
+// ---------- showing up on Google (2026-11-24) ----------
+// Published pages get: a canonical address, a sitemap (/sitemap.xml, listed in robots.txt) and schema.org data
+// (JSON-LD) built only from facts the page itself shows, so Google never reads something a visitor can't see:
+//   WebSite        the business name (from the page title, before " | ") and address, always;
+//   LocalBusiness  added when the page has a real phone link or shows the owner's saved business hours.
+// Hours come from business_hours (publish_site returns them, 028), but are used only if every time in them
+// appears on the page: a site built before the hours changed keeps showing old hours, and Google must not get new ones.
+// Anything still holding a [PLACEHOLDER] is left out. JSON-LD is a data block, not a script: the CSP doesn't apply.
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAY_SCHEMA = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+// The same wording build-site uses for hours on the page ("9 AM", "11:30 AM", "noon", "midnight").
+function clock(t) {
+  const [h, m] = t.split(':').map(Number);
+  if (h === 12 && m === 0) return 'noon';
+  if (h === 0 && m === 0) return 'midnight';
+  return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`;
+}
+// Page text squeezed for comparing times: "9 AM", "9am", "9 a.m." and "9:00 AM" all become "9am".
+function squeezeTimes(s) {
+  return s.toLowerCase().replace(/\s+/g, '').replace(/a\.m\.?/g, 'am').replace(/p\.m\.?/g, 'pm').replace(/(\d):00(?=[ap]m)/g, '$1');
+}
+function openingHours(hours, pageText) {
+  const days = hours && typeof hours === 'object' && hours.days && typeof hours.days === 'object' ? hours.days : null;
+  if (!days) return null;
+  const text = squeezeTimes(pageText);
+  const specs = [];
+  for (const k of DAY_KEYS) {
+    const d = days[k];
+    if (d === undefined) continue;
+    if (d === 'closed') continue; // a day with no opening hours is how schema.org says closed
+    if (!Array.isArray(d)) return null;
+    for (const r of d) {
+      if (!Array.isArray(r) || !HHMM.test(r[0]) || !HHMM.test(r[1])) return null;
+      if (!text.includes(squeezeTimes(clock(r[0]))) || !text.includes(squeezeTimes(clock(r[1])))) return null;
+      specs.push({ '@type': 'OpeningHoursSpecification', dayOfWeek: DAY_SCHEMA[k], opens: r[0], closes: r[1] });
+    }
+  }
+  return specs.length ? specs : null;
+}
+// First pass over the page: what it says about itself.
+async function inspect(html) {
+  const info = { title: '', desc: '', h1: '', tels: [], text: '' };
+  let skip = 0; let inH1 = false;
+  await new HTMLRewriter()
+    .on('title', { text(t) { if (info.title.length < 400) info.title += t.text; } })
+    .on('meta', { element(el) { if ((el.getAttribute('name') || '').toLowerCase() === 'description' && !info.desc) info.desc = el.getAttribute('content') || ''; } })
+    .on('a[href^="tel:"]', { element(el) { if (info.tels.length < 10) info.tels.push(el.getAttribute('href').slice(4)); } })
+    .on('style, script, template, noscript', { element(el) { skip++; el.onEndTag(() => { skip--; }); } })
+    .on('h1', { element(el) { if (!info.h1) { inH1 = true; el.onEndTag(() => { inH1 = false; }); } } })
+    .on('body *', { text(t) {
+      if (skip) return;
+      if (inH1 && info.h1.length < 200) info.h1 += t.text;
+      if (info.text.length < 100000) info.text += t.text + (t.lastInTextNode ? ' ' : '');
+    } })
+    .transform(new Response(html, { headers: { 'Content-Type': 'text/html' } })).text();
+  return info;
+}
+const clean = (s, max) => decodeEntities(s).replace(/\s+/g, ' ').trim().slice(0, max);
+const hasBlank = (s) => /\[[^\]]{2,}\]/.test(s);
+function phone(tels) {
+  for (const raw of tels) {
+    const t = decodeURIComponent(raw).replace(/[\s().-]/g, '');
+    if (!/^\+?\d{7,15}$/.test(t)) continue; // "[PHONE NUMBER]" and junk are skipped
+    if (/^\d{10}$/.test(t)) return '+1' + t; // a US number written without the country code
+    if (/^1\d{10}$/.test(t)) return '+' + t;
+    return t;
+  }
+  return null;
+}
+function structuredData(info, slug, og) {
+  const url = `https://${slug}.${ROOT}/`;
+  const title = clean(info.title, 200);
+  let name = title.split(/\s+[|·•–—-]\s+/)[0].trim();
+  if (!name || name.length > 80) name = clean(info.h1, 80);
+  if (!name || hasBlank(name)) return [];
+  const desc = clean(info.desc, 300);
+  const out = [{ '@context': 'https://schema.org', '@type': 'WebSite', name, url }];
+  const tel = phone(info.tels);
+  const hours = openingHours(og.hours, info.text);
+  if (tel || hours) {
+    const b = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name, url };
+    if (desc && !hasBlank(desc)) b.description = desc;
+    if (og.logo) b.logo = url + 'logo.png';
+    if (og.image) b.image = og.image;
+    if (tel) b.telephone = tel;
+    if (hours) b.openingHoursSpecification = hours;
+    out.push(b);
+  }
+  return out;
+}
+// A JSON-LD block that can't end its own element early: <, > and & are written as \u escapes.
+function jsonLd(obj) {
+  const j = JSON.stringify(obj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  return `<script type="application/ld+json">${j}</script>`;
+}
+async function sitemap(env, slug, url, method) {
+  const pages = [];
+  if (await env.SITES.get('site:' + slug)) pages.push(url.origin + '/');
+  if (await publicMenu(env, slug)) pages.push(url.origin + '/menu');
+  if (!pages.length) return notFound();
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `  <url><loc>${esc(p)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  return new Response(method === 'HEAD' ? null : xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' } });
+}
+
 async function prepare(html, slug, hasLogo, og) {
   const footer = `<div style="all:initial;display:block;padding:14px 16px;text-align:center;font:13px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;background:#120A18;color:#BBA9C2">Made with <a href="https://sogilex.com/" style="color:#FF9A4D">Sogilex</a> · <a href="mailto:hello@sogilex.com?subject=${encodeURIComponent('Report: ' + slug + '.' + ROOT)}" style="color:#BBA9C2">Report this site</a></div>`;
   const trap = '<div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>';
@@ -499,6 +607,8 @@ async function prepare(html, slug, hasLogo, og) {
     })
     .on('body', { element(el) { el.append(footer, { html: true }); } });
   if (og) {
+    const info = await inspect(html);
+    const seo = `<link rel="canonical" href="${esc(og.url)}">` + structuredData(info, slug, og).map(jsonLd).join('');
     let title = ''; let desc = ''; let added = false;
     rewriter
       .on('meta', { element(el) {
@@ -507,9 +617,9 @@ async function prepare(html, slug, hasLogo, og) {
         else if (key === 'description' && !desc) desc = el.getAttribute('content') || '';
       } })
       .on('title', { text(t) { if (title.length < 400) title += t.text; } })
-      .on('head', { element(el) { el.onEndTag((end) => { added = true; end.before(ogTags(og, title, desc), { html: true }); }); } })
+      .on('head', { element(el) { el.onEndTag((end) => { added = true; end.before(ogTags(og, title, desc) + seo, { html: true }); }); } })
       // A page without a <head> (shouldn't happen): put the tags at the start of the body instead.
-      .on('body', { element(el) { if (!added) { added = true; el.prepend(ogTags(og, title, desc), { html: true }); } } });
+      .on('body', { element(el) { if (!added) { added = true; el.prepend(ogTags(og, title, desc) + seo, { html: true }); } } });
   }
   return rewriter.transform(new Response(html, { headers: { 'Content-Type': 'text/html' } })).text();
 }
