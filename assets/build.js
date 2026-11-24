@@ -308,11 +308,54 @@
     const ogChanged = isLive && ogEffective() !== (site.preview || 'auto');
     $('pub-go').disabled = !(builtOk && lastBuildId) || (isLive && !ogChanged);
     $('pub-go').textContent = ogChanged ? 'Update link preview' : isLive ? 'This version is live' : live ? 'Publish this version' : 'Publish this site';
+    showBlanks(isLive);
     $('pub-hint').textContent = !(builtOk && lastBuildId) ? 'Build a site first, then publish it here.'
       : ogChanged ? 'Your site stays the same; only the link preview picture changes.'
         : isLive ? 'What you see here is what visitors see.'
           : live ? `This replaces what's live at ${site.slug}.sogilex.net.` : 'Your site goes live at this address in a few seconds.';
   }
+
+  // ---------- blanks left on the page ([PHONE NUMBER], [PRICE]...) ----------
+  // Build leaves a [PLACEHOLDER] for any fact it wasn't given. Published as they are, visitors and Google see them, so
+  // the Publish box says how many are left (visible text, phone/email links, the page title and description) and
+  // offers Edit words, which has a box for each one. Publishing with blanks asks first.
+  const BLANK = /\[[^\]\n]{2,48}\]/g;
+  function blanksIn(src) {
+    if (!src) return { count: 0, names: [] };
+    const d = new DOMParser().parseFromString(src, 'text/html');
+    const found = [];
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) found.push(...(c.nodeValue.match(BLANK) || []));
+        else if (c.nodeType === 1 && !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(c.tagName)) walk(c);
+      }
+    };
+    if (d.body) walk(d.body);
+    d.querySelectorAll('a[href^="tel:"], a[href^="mailto:"]').forEach((a) => {
+      const inText = (a.textContent.match(BLANK) || []).length;
+      if (!inText) found.push(...(decodeURIComponent(a.getAttribute('href')).match(BLANK) || []));
+    });
+    if (d.title) found.push(...(d.title.match(BLANK) || []));
+    const desc = d.querySelector('meta[name="description"]'); if (desc) found.push(...((desc.getAttribute('content') || '').match(BLANK) || []));
+    return { count: found.length, names: [...new Set(found)] };
+  }
+  let blanks = { count: 0, names: [] };
+  function showBlanks(isLive) {
+    blanks = builtOk && lastBuildId ? blanksIn(html) : { count: 0, names: [] };
+    const box = $('pub-blanks');
+    box.hidden = !blanks.count;
+    if (!blanks.count) return;
+    const like = blanks.names.slice(0, 2).join(' and ');
+    $('pub-blanks-text').textContent = `${isLive ? 'Your live site still shows' : 'This version still shows'} ${blanks.count} ${blanks.count === 1 ? 'blank' : 'blanks'}, like ${like}. Visitors and Google see ${blanks.count === 1 ? 'it' : 'them'} exactly like that. Fill in your real details${isLive ? ', then publish again' : ' before you publish'}.`;
+  }
+  // Straight to the fill-in boxes: open Edit words, and once the page is ready, the first blank.
+  $('pub-blanks-fix').addEventListener('click', () => {
+    startWords();
+    const f = $('frame'); const ready = f.onload;
+    if (!words.on || !ready) return;
+    f.onload = (e) => { ready(e); words.phAt = 0; phNext(false); };
+    $('words-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
 
   // ---------- link preview picture (Open Graph; the Worker adds the tags when publishing) ----------
   // 'auto' = the first of your photos on the page, else your logo; 'logo'; or one photo's id.
@@ -385,6 +428,7 @@
     const st = $('pub-status'); st.className = 'status';
     const slugValue = slugify($('pub-slug').value);
     if (slugValue.length < 3) { st.textContent = 'Choose an address of at least 3 letters or numbers.'; st.classList.add('err'); $('pub-slug').focus(); return; }
+    if (blanks.count && !confirm(`This version still shows ${blanks.count} ${blanks.count === 1 ? 'blank' : 'blanks'}, like ${blanks.names[0]}. Visitors will see ${blanks.count === 1 ? 'it' : 'them'} as written. Publish anyway?`)) return;
     $('pub-go').disabled = true; st.textContent = 'Publishing…';
     try {
       let out = await publishCall('/publish', { build_id: lastBuildId, slug: slugValue, preview: ogEffective() });
