@@ -188,8 +188,9 @@
     if (!res.ok || !res.data || !res.data.plan) return section('plan', 'Your plan', null, h('p', { class: 'muted', text: "Couldn't load your plan. Refresh to try again." }));
     const d = res.data; const pl = d.plan; const L = pl.limits || {}; const u = d.used || {};
     const when = { today: 'Used today', 'this month': 'Used this month', 'on the free trial': 'Used on your free trial' }[d.when] || 'Used';
-    const meters = [meter('New websites', u.builds || 0, d.builds_allowed || 0), meter('Website changes', u.edits || 0, L.edits || 0),
-      meter('Captions', u.captions || 0, L.captions || 0), meter('Menus read from photos', u.imports || 0, L.imports || 0)];
+    // A plan without websites (Basics) shows no website meters ("0 of 0" would read as used up).
+    const meters = [d.builds_allowed ? meter('New websites', u.builds || 0, d.builds_allowed) : null, L.edits ? meter('Website changes', u.edits || 0, L.edits) : null,
+      meter('Captions', u.captions || 0, L.captions || 0), meter('Menus read from photos', u.imports || 0, L.imports || 0)].filter(Boolean);
     if (L.window === 'ever') meters.push(meter('Flyers', u.flyers || 0, L.flyers || 0), meter('Posts', u.posts || 0, L.posts || 0), meter('Quotes and invoices', u.docs || 0, L.docs || 0));
     const req = d.requested_plan && plans.find((x) => x.id === d.requested_plan);
     const chooser = h('div', { class: 'acct-chooser', id: 'plan-chooser', hidden: true });
