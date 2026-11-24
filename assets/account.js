@@ -223,7 +223,7 @@
       h('div', { class: 'acct-plan-now' },
         h('div', {},
           h('p', { class: 'acct-plan-name', text: pl.name }),
-          h('p', { class: 'muted', text: [priceLine(pl, d.billing), d.period_end ? `renews ${day(d.period_end)}` : '', d.status && d.status !== 'active' ? d.status.replace('_', ' ') : ''].filter(Boolean).join(' · ') }),
+          h('p', { class: 'muted', text: [priceLine(pl, d.billing), d.billing_managed && d.period_end ? `renews ${day(d.period_end)}` : '', d.billing_managed && d.status && d.status !== 'active' ? d.status.replace('_', ' ') : ''].filter(Boolean).join(' · ') }),
           h('p', { class: 'muted acct-hint', text: pl.blurb })),
         toggle),
       d.status === 'past_due' ? h('p', { class: 'acct-note acct-req', text: "Your last payment didn't go through. Use Manage billing to update your card, so your plan doesn't stop." }) : null,
