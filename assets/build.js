@@ -12,6 +12,8 @@
       ? window.SogilexAuth.clientOptions()
       : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
+  if (window.SogilexUpgrade) { SogilexUpgrade.init(db); SogilexUpgrade.trialBar('builds'); }
+  const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   // Auth calls have no abort option, so give them an overall time limit.
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Couldn't reach the account service. Check your connection.")), ms))]);
 
@@ -394,7 +396,7 @@
       st.innerHTML = ''; st.append('Live at ', Object.assign(document.createElement('a'), { href: out.url, target: '_blank', rel: 'noopener', textContent: out.url }), '. It can take a minute to appear the very first time.');
       st.classList.add('ok');
       await loadSite(); loadBuilds(false);
-    } catch (err) { st.textContent = err.message; st.classList.add('err'); refreshPublish(); }
+    } catch (err) { st.textContent = err.message; st.classList.add('err'); refreshPublish(); UP(err.message); }
   });
   $('pub-off').addEventListener('click', async () => {
     if (!confirm(`Take ${site.slug}.sogilex.net offline? You can publish again any time.`)) return;
@@ -667,7 +669,7 @@
       if (!result && !failed) failed = 'The connection dropped before the change was finished. Please try again.';
     } catch (err) { failed = (err && err.message) || 'Something went wrong. Please try again.'; }
     wait.remove();
-    if (failed) { chat.push({ role: 'sogilex', text: failed, err: true }); bubble('sogilex', failed, 'err'); }
+    if (failed) { chat.push({ role: 'sogilex', text: failed, err: true }); bubble('sogilex', failed, 'err'); UP(failed); }
     else {
       chat.push({ role: 'sogilex', text: result.reply }); bubble('sogilex', result.reply);
       if (result.build_id && result.html) {
@@ -1313,11 +1315,12 @@
     $('frame').closest('.preview').classList.remove('building');
     go.disabled = false; go.classList.remove('working'); go.firstChild.textContent = 'Build another ';
     if (failed) {
-      st.textContent = failed; st.classList.add('err');
+      st.textContent = failed; st.classList.add('err'); UP(failed);
       if (html) { html = clean(html); paint(true); }
     } else {
       html = clean(html); paint(true); setDone(true);
       builtOk = true; refreshPublish();
+      if (window.SogilexUpgrade) SogilexUpgrade.refresh();
       st.textContent = 'Done. To change anything, type in "Change your site" above the preview.'; st.classList.add('ok');
     }
     $('ver').disabled = false;

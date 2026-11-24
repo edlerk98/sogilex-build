@@ -9,6 +9,8 @@
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
+  if (window.SogilexUpgrade) SogilexUpgrade.init(db);
+  const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
 
@@ -246,7 +248,7 @@
       onlineSay(`Up to date. Changes show online within a minute.`);
       syncOnlinePhotos();
       return true;
-    } catch (e) { onlineSay((e && e.message) || "Couldn't update the online menu. Check your connection.", true); return false; }
+    } catch (e) { onlineSay((e && e.message) || "Couldn't update the online menu. Check your connection.", true); UP(e && e.message); return false; }
   }
   // The online menu's photos are copied by the publishing service (api.sogilex.net) with the owner's sign-in.
   // Only when the photos used change (or the name does), so ordinary price edits don't copy anything.
@@ -394,7 +396,7 @@
       applyRead(result);
       say(`Read ${result.menu.sections.reduce((n, sec) => n + sec.items.length, 0)} dishes in ${result.menu.sections.length} sections. Check the highlighted prices below.`);
     } catch (e) {
-      say((e && e.message) || 'Something went wrong. Please try again.', true);
+      say((e && e.message) || 'Something went wrong. Please try again.', true); UP(e && e.message);
     } finally {
       reading = false; btn.disabled = false; btn.textContent = 'Read it from a photo';
     }

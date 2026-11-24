@@ -11,10 +11,12 @@
   const db = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     auth: window.SogilexAuth ? window.SogilexAuth.clientOptions() : { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   });
+  const UP = (m) => !!(window.SogilexUpgrade && window.SogilexUpgrade.offer(m)); // a plan limit opens the upgrade box
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   async function session() { try { const { data } = await within(db.auth.getSession(), 10000); return data.session; } catch { return null; } }
 
   const POSTS = document.body.dataset.tool === 'posts';
+  if (window.SogilexUpgrade) { SogilexUpgrade.init(db); SogilexUpgrade.trialBar(POSTS ? 'posts' : 'flyers'); }
   const TABLE = POSTS ? 'posts' : 'flyers';
   const NOUN = POSTS ? 'post' : 'flyer';
   const MAX_DETAILS = 5;
@@ -254,7 +256,7 @@
       const box = $('f-caption'); if (box) box.value = flyer.caption;
       changed();
       say(`Done. Read it before you post: it only uses your facts, but you know your business best.${typeof data.left === 'number' ? ` ${data.left} caption${data.left === 1 ? '' : 's'} left ${leftWhen(await getPlan())}.` : ''}`);
-    } catch (e) { say((e && e.message) || "That didn't work. Please try again.", true); }
+    } catch (e) { say((e && e.message) || "That didn't work. Please try again.", true); UP(e && e.message); }
     finally { captionBusy = false; buttons.forEach((b) => { b.disabled = false; }); }
   }
   function captionGroup() {
@@ -674,10 +676,16 @@
         const { data, error } = await db.from(TABLE).insert({ data: flyer }).select('id, data, updated_at').single().abortSignal(AbortSignal.timeout(10000));
         if (error) throw error;
         flyerId = data.id; list.unshift(data); renderEditor();
+        if (window.SogilexUpgrade) SogilexUpgrade.refresh();
       }
     })();
     try { await saving; $('save-state').textContent = 'Saved'; }
-    catch (e) { $('save-state').textContent = (e && / saved\. Delete/.test(e.message)) ? e.message : "Couldn't save. Check your connection."; }
+    catch (e) {
+      const m = (e && e.message) || '';
+      const limit = / saved\. Delete|free trial includes|your plan/i.test(m);
+      $('save-state').textContent = limit ? m : "Couldn't save. Check your connection.";
+      if (limit) UP(m);
+    }
     finally { saving = null; }
   }
   const pending = () => uid && /Unsaved|Saving/.test($('save-state').textContent);
